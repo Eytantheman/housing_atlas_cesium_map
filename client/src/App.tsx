@@ -2,9 +2,9 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { MapView } from './components/map/MapView';
 import { ProjectPanel } from './components/panel/ProjectPanel';
 import { FilterPanel } from './components/filters/FilterPanel';
-import { Legend } from './components/shared/Legend';
 import { useProjects } from './hooks/useProjects';
 import { useFilters } from './hooks/useFilters';
+import { CITY_VIEWS, CITY_TOURS } from './config/tours';
 import type { HousingProject, BuildingSelection, ProjectFeatureCollection } from './types';
 
 const EMPTY_FC: ProjectFeatureCollection = { type: 'FeatureCollection', features: [] };
@@ -14,10 +14,21 @@ export default function App() {
   const { filters, setFilter, clearFilters, filteredFeatures, filteredList } = useFilters(features, allProjects);
   const [selection, setSelection] = useState<BuildingSelection | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [flyToTarget, setFlyToTarget] = useState<{ lng: number; lat: number; id: number } | null>(null);
+  const [flyToTarget, setFlyToTarget] = useState<{ lng: number; lat: number; zoom?: number; pitch?: number; id: number } | null>(null);
+  const [activeCity, setActiveCity] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const cities = useMemo(() => [...new Set(allProjects.map(p => p.city))].sort(), [allProjects]);
+
+  // Build tour project list for the active city
+  const tourProjects = useMemo(() => {
+    if (!activeCity) return [];
+    const tourIds = CITY_TOURS[activeCity];
+    if (!tourIds) return [];
+    return tourIds
+      .map(id => allProjects.find(p => p.id === id))
+      .filter((p): p is HousingProject => p != null && p.lat != null && p.lng != null);
+  }, [activeCity, allProjects]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -56,12 +67,20 @@ export default function App() {
   const handleListItemClick = (project: HousingProject) => {
     setDropdownOpen(false);
     if (project.lat != null && project.lng != null) {
-      setFlyToTarget({ lng: project.lng, lat: project.lat, id: Date.now() });
+      setFlyToTarget({ lng: project.lng, lat: project.lat, zoom: 16, pitch: 55, id: Date.now() });
     }
     handleProjectSelect(project);
   };
 
-  // Sort listed projects by city then name for the dropdown
+  const handleCityFly = (city: string | null) => {
+    setActiveCity(city);
+    if (!city) return;
+    const view = CITY_VIEWS[city];
+    if (view) {
+      setFlyToTarget({ lng: view.lng, lat: view.lat, zoom: view.zoom, pitch: view.pitch, id: Date.now() });
+    }
+  };
+
   const sortedList = useMemo(
     () => [...filteredList].sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name)),
     [filteredList],
@@ -75,6 +94,7 @@ export default function App() {
         onBuildingSelect={handleBuildingSelect}
         selectedProject={selection?.atlasProject ?? null}
         flyToTarget={flyToTarget}
+        tourProjects={tourProjects}
       />
       {loading && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(4px)', zIndex: 50, fontFamily: 'var(--font-body)', color: 'var(--color-ink-muted)' }}>
@@ -82,8 +102,44 @@ export default function App() {
         </div>
       )}
 
-      <FilterPanel filters={filters} setFilter={setFilter} clearFilters={clearFilters} cities={cities} />
-      <Legend />
+      <FilterPanel
+        filters={filters}
+        setFilter={setFilter}
+        clearFilters={clearFilters}
+        cities={cities}
+        onCityFly={handleCityFly}
+      />
+
+      {/* Tour legend — shown when a city tour is active */}
+      {activeCity && tourProjects.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          bottom: 'var(--space-6)',
+          left: 'var(--space-4)',
+          background: 'var(--color-bg-overlay)',
+          backdropFilter: 'blur(8px)',
+          borderRadius: 'var(--radius-md)',
+          padding: 'var(--space-3) var(--space-4)',
+          boxShadow: 'var(--shadow-md)',
+          zIndex: 10,
+          maxWidth: 260,
+        }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-ink-muted)', marginBottom: 'var(--space-2)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Architecture Tour · {activeCity}</span>
+            <button onClick={() => { setActiveCity(null); clearFilters(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent)', fontSize: 'var(--text-xs)', padding: 0, marginLeft: 8 }}>✕</button>
+          </div>
+          {tourProjects.map((p, i) => (
+            <div
+              key={p.id}
+              onClick={() => handleListItemClick(p)}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0', cursor: 'pointer', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}
+            >
+              <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#C4623A', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</div>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-ink)', lineHeight: 1.4 }}>{p.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* List dropdown */}
       <div ref={dropdownRef} style={{ position: 'absolute', top: 'var(--space-4)', right: 'var(--space-4)', zIndex: 20 }}>

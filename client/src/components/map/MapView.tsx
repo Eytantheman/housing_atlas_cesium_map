@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import Map, { Marker, Source, Layer } from 'react-map-gl/maplibre';
 import type { MapRef, MapMouseEvent, ViewStateChangeEvent } from 'react-map-gl/maplibre';
 import type { Feature, FeatureCollection } from 'geojson';
@@ -24,7 +24,8 @@ interface Props {
   onProjectSelect: (project: HousingProject) => void;
   onBuildingSelect: (selection: BuildingSelection) => void;
   selectedProject: HousingProject | null;
-  flyToTarget?: { lng: number; lat: number; id: number } | null;
+  flyToTarget?: { lng: number; lat: number; zoom?: number; pitch?: number; id: number } | null;
+  tourProjects?: HousingProject[];
 }
 
 // ── Web Mercator tile math ────────────────────────────────────────────────────
@@ -47,7 +48,7 @@ function tileToBbox(x: number, y: number, z: number): [number, number, number, n
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarget }: Props) {
+export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarget, tourProjects }: Props) {
   const mapRef = useRef<MapRef>(null);
   const [zoom, setZoom] = useState(MAP_DEFAULTS.zoom);
   const [geojson, setGeojson] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
@@ -194,8 +195,8 @@ export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarg
     if (!flyToTarget || !mapRef.current) return;
     mapRef.current.getMap().flyTo({
       center: [flyToTarget.lng, flyToTarget.lat],
-      zoom: 16,
-      pitch: 55,
+      zoom:  flyToTarget.zoom  ?? 16,
+      pitch: flyToTarget.pitch ?? 55,
       duration: 1800,
     });
   }, [flyToTarget]);
@@ -216,6 +217,32 @@ export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarg
 
   const show3D = zoom >= MIN_3D_ZOOM;
   const isLoading = loadingCount > 0;
+
+  // Build tour GeoJSON from ordered project list
+  const tourGeojson = useMemo((): FeatureCollection => {
+    if (!tourProjects || tourProjects.length < 2) return { type: 'FeatureCollection', features: [] };
+    const coords = tourProjects
+      .filter(p => p.lat != null && p.lng != null)
+      .map(p => [p.lng!, p.lat!]);
+    if (coords.length < 2) return { type: 'FeatureCollection', features: [] };
+    return {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: coords },
+          properties: {},
+        },
+        ...tourProjects
+          .filter(p => p.lat != null && p.lng != null)
+          .map((p, i) => ({
+            type: 'Feature' as const,
+            geometry: { type: 'Point' as const, coordinates: [p.lng!, p.lat!] },
+            properties: { stop: i + 1, name: p.name },
+          })),
+      ],
+    };
+  }, [tourProjects]);
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
@@ -274,6 +301,55 @@ export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarg
                 'text-halo-color': '#7A2D10',
                 'text-halo-width': 1.5,
               }}
+            />
+          </Source>
+        )}
+
+        {/* Architecture tour route */}
+        {tourGeojson.features.length > 0 && (
+          <Source id="tour-src" type="geojson" data={tourGeojson}>
+            {/* Dashed route line */}
+            <Layer
+              id="tour-line-casing"
+              type="line"
+              filter={['==', ['geometry-type'], 'LineString']}
+              paint={{ 'line-color': '#fff', 'line-width': 5, 'line-opacity': 0.6 }}
+            />
+            <Layer
+              id="tour-line"
+              type="line"
+              filter={['==', ['geometry-type'], 'LineString']}
+              paint={{
+                'line-color': '#C4623A',
+                'line-width': 2.5,
+                'line-dasharray': [4, 3],
+              }}
+            />
+            {/* Stop circles */}
+            <Layer
+              id="tour-stops"
+              type="circle"
+              filter={['==', ['geometry-type'], 'Point']}
+              paint={{
+                'circle-radius': 10,
+                'circle-color': '#C4623A',
+                'circle-stroke-color': '#fff',
+                'circle-stroke-width': 2,
+              }}
+            />
+            {/* Stop numbers */}
+            <Layer
+              id="tour-stop-labels"
+              type="symbol"
+              filter={['==', ['geometry-type'], 'Point']}
+              layout={{
+                'text-field': ['to-string', ['get', 'stop']],
+                'text-size': 11,
+                'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                'text-allow-overlap': true,
+                'text-ignore-placement': true,
+              }}
+              paint={{ 'text-color': '#fff' }}
             />
           </Source>
         )}

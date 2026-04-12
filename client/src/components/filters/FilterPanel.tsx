@@ -1,5 +1,4 @@
-import type { FilterState, Era } from '../../types';
-import { EraFilter } from './EraFilter';
+import type { FilterState } from '../../types';
 import { CityFilter } from './CityFilter';
 
 interface Props {
@@ -7,9 +6,10 @@ interface Props {
   setFilter: <K extends keyof FilterState>(key: K, value: FilterState[K]) => void;
   clearFilters: () => void;
   cities: string[];
+  onCityFly: (city: string | null) => void;
 }
 
-export function FilterPanel({ filters, setFilter, clearFilters, cities }: Props) {
+export function FilterPanel({ filters, setFilter, clearFilters, cities, onCityFly }: Props) {
   return (
     <div style={{
       position: 'absolute',
@@ -48,30 +48,29 @@ export function FilterPanel({ filters, setFilter, clearFilters, cities }: Props)
         flexDirection: 'column',
         gap: 'var(--space-4)',
       }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 600 }}>Filters</span>
-        <button onClick={clearFilters} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent)', fontSize: 'var(--text-sm)' }}>Clear all</button>
-      </div>
-      <EraFilter selected={filters.eras} onChange={v => setFilter('eras', v as Era[])} />
-      <CityFilter cities={cities} selected={filters.cities} onChange={v => setFilter('cities', v)} />
-      <div>
-        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-ink-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', marginBottom: 'var(--space-2)', letterSpacing: '0.05em' }}>Search</div>
-        <input
-          type="search"
-          placeholder="Name, architect, community…"
-          value={filters.searchQuery}
-          onChange={e => setFilter('searchQuery', e.target.value)}
-          style={{
-            width: '100%',
-            padding: 'var(--space-2)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--color-bg-card)',
-            color: 'var(--color-ink)',
-            fontSize: 'var(--text-sm)',
-          }}
-        />
-      </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 600 }}>Filters</span>
+          <button onClick={clearFilters} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent)', fontSize: 'var(--text-sm)' }}>Clear all</button>
+        </div>
+        <CityFilter cities={cities} selected={filters.cities} onChange={v => setFilter('cities', v)} onCityFly={onCityFly} />
+        <div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-ink-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', marginBottom: 'var(--space-2)', letterSpacing: '0.05em' }}>Search</div>
+          <input
+            type="search"
+            placeholder="Name, architect, community…"
+            value={filters.searchQuery}
+            onChange={e => setFilter('searchQuery', e.target.value)}
+            style={{
+              width: '100%',
+              padding: 'var(--space-2)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-bg-card)',
+              color: 'var(--color-ink)',
+              fontSize: 'var(--text-sm)',
+            }}
+          />
+        </div>
       </div>
     </div>
   );
