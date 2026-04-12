@@ -1,0 +1,30 @@
+
+interface Props {
+  cities: string[];
+  selected: string[];
+  onChange: (cities: string[]) => void;
+}
+
+export function CityFilter({ cities, selected, onChange }: Props) {
+  return (
+    <div>
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-ink-muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', marginBottom: 'var(--space-2)', letterSpacing: '0.05em' }}>City</div>
+      <select
+        value={selected[0] ?? ''}
+        onChange={e => onChange(e.target.value ? [e.target.value] : [])}
+        style={{
+          width: '100%',
+          padding: 'var(--space-2)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--color-bg-card)',
+          color: 'var(--color-ink)',
+          fontSize: 'var(--text-sm)',
+        }}
+      >
+        <option value="">All cities</option>
+        {cities.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+    </div>
+  );
+}
