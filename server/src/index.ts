@@ -10,16 +10,13 @@ import healthRouter from './routes/health';
 import { resolveBagIds } from './services/bagIdResolver';
 
 const app = express();
-const PORT = process.env.PORT ?? 3001;
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(compression());
 app.use(express.json());
 
-// Rate-limit only the PDOK-proxying bbox endpoint — it triggers upstream
-// requests to PDOK which rate-limits aggressively above ~3 req/s.
-// All other routes (projects, metadata) are un-throttled.
+// Rate-limit only the PDOK-proxying bbox endpoint
 const bboxLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
 
 app.use('/api/projects', projectsRouter);
@@ -29,11 +26,13 @@ app.use('/api/health', healthRouter);
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  // Resolve BAG IDs in the background — first run hits 3DBAG API, subsequent
-  // runs load from bag-ids-cache.json instantly.
-  resolveBagIds().catch(e => console.error('[bagIdResolver] Failed:', e));
-});
+// Resolve BAG IDs once at startup (cached after first run)
+resolveBagIds().catch(e => console.error('[bagIdResolver] Failed:', e));
 
 export default app;
+
+// Start local server only when not running on Vercel
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT ?? 3001;
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
