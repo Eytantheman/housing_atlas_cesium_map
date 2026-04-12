@@ -51,6 +51,7 @@ function tileToBbox(x: number, y: number, z: number): [number, number, number, n
 export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarget, tourProjects }: Props) {
   const mapRef = useRef<MapRef>(null);
   const [zoom, setZoom] = useState(MAP_DEFAULTS.zoom);
+  const [bearing, setBearing] = useState(MAP_DEFAULTS.bearing ?? 0);
   const [geojson, setGeojson] = useState<FeatureCollection>({ type: 'FeatureCollection', features: [] });
   const [loadingCount, setLoadingCount] = useState(0);
 
@@ -184,12 +185,39 @@ export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarg
   const moveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleZoom = useCallback((e: ViewStateChangeEvent) => setZoom(e.viewState.zoom), []);
+  const handleRotate = useCallback((e: ViewStateChangeEvent) => setBearing(e.viewState.bearing), []);
 
   const handleLoad    = useCallback(() => fetchVisibleTiles(), [fetchVisibleTiles]);
   const handleMoveEnd = useCallback(() => {
     if (moveTimer.current) clearTimeout(moveTimer.current);
     moveTimer.current = setTimeout(fetchVisibleTiles, 100);
   }, [fetchVisibleTiles]);
+
+  // Pre-fetch tiles for all tour project locations as soon as tour activates
+  useEffect(() => {
+    if (!tourProjects || tourProjects.length === 0) return;
+    const keys = new Set<string>();
+    for (const p of tourProjects) {
+      if (p.lat == null || p.lng == null) continue;
+      // Fetch the tile containing this project plus its 8 neighbors
+      const cx = lngToTileX(p.lng, FETCH_ZOOM);
+      const cy = latToTileY(p.lat, FETCH_ZOOM);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          keys.add(`${FETCH_ZOOM}/${cx + dx}/${cy + dy}`);
+        }
+      }
+    }
+    for (const key of keys) {
+      if (tileCache.current[key] === undefined && !inFlight.current[key]) {
+        fetchQueue.current.unshift(key); // high priority — front of queue
+      }
+    }
+    // Deduplicate
+    const seen = new Set<string>();
+    fetchQueue.current = fetchQueue.current.filter(k => seen.has(k) ? false : (seen.add(k), true));
+    processQueue();
+  }, [tourProjects, processQueue]);
 
   useEffect(() => {
     if (!flyToTarget || !mapRef.current) return;
@@ -200,6 +228,11 @@ export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarg
       duration: 1800,
     });
   }, [flyToTarget]);
+
+  const handleResetNorth = useCallback(() => {
+    if (!mapRef.current) return;
+    mapRef.current.getMap().easeTo({ bearing: 0, pitch: 0, duration: 600 });
+  }, []);
 
   const handleMapClick = useCallback(async (e: MapMouseEvent) => {
     if (!mapRef.current) return;
@@ -217,6 +250,7 @@ export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarg
 
   const show3D = zoom >= MIN_3D_ZOOM;
   const isLoading = loadingCount > 0;
+  const tourActive = tourProjects != null && tourProjects.length > 0;
 
   // Build tour GeoJSON from ordered project list
   const tourGeojson = useMemo((): FeatureCollection => {
@@ -253,6 +287,7 @@ export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarg
         style={{ position: 'absolute', inset: 0 }}
         onClick={handleMapClick}
         onZoom={handleZoom}
+        onRotate={handleRotate}
         onLoad={handleLoad}
         onMoveEnd={handleMoveEnd}
       >
@@ -354,8 +389,8 @@ export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarg
           </Source>
         )}
 
-        {/* 2D markers — only at low zoom; at high zoom labels come from the polygon layer above */}
-        {!show3D && features.features.map(f => (
+        {/* 2D markers — at low zoom always; in tour mode always (immediate visual confirmation) */}
+        {(!show3D || tourActive) && features.features.map(f => (
           <Marker
             key={f.properties.id}
             longitude={f.geometry.coordinates[0]}
@@ -370,6 +405,31 @@ export function MapView({ features, onProjectSelect, onBuildingSelect, flyToTarg
           </Marker>
         ))}
       </Map>
+
+      {/* North reset button */}
+      <button
+        onClick={handleResetNorth}
+        title="Reset to north"
+        style={{
+          position: 'absolute',
+          top: 'var(--space-4)',
+          right: 'calc(var(--space-4) + 110px)',
+          width: 36,
+          height: 36,
+          background: 'var(--color-bg-overlay)',
+          backdropFilter: 'blur(8px)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-sm)',
+          cursor: 'pointer',
+          boxShadow: 'var(--shadow-sm)',
+          zIndex: 10,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <span style={{ display: 'inline-block', transform: `rotate(${-bearing}deg)`, transition: 'transform 0.15s', fontSize: 16, lineHeight: 1, color: bearing === 0 ? 'var(--color-accent)' : 'var(--color-ink)' }}>↑</span>
+      </button>
 
       {/* Loading indicator */}
       {isLoading && (
