@@ -16,7 +16,9 @@ export interface Project {
   description: string;
 }
 
-const dataPath = path.join(__dirname, '../../data/housing-atlas.json');
+const dataPath = process.env.DATA_DIR
+  ? path.join(process.env.DATA_DIR, 'housing-atlas.json')
+  : path.join(__dirname, '../../data/housing-atlas.json');
 const projects: Project[] = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
 
 export function getAllProjects(): Project[] {

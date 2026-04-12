@@ -9,7 +9,12 @@ import fetch from 'node-fetch';
 import { getAllProjects } from './projectsService';
 import { wgs84ToRd } from '../utils/rdConvert';
 
-const cachePath = path.join(__dirname, '../../data/bag-ids-cache.json');
+// Vercel serverless has a read-only filesystem except /tmp.
+// Use /tmp for the cache when the bundled data path is not writable.
+const dataDir    = process.env.DATA_DIR ?? path.join(__dirname, '../../data');
+const DATA_CACHE = path.join(dataDir, 'bag-ids-cache.json');
+const TMP_CACHE  = '/tmp/bag-ids-cache.json';
+const cachePath  = process.env.VERCEL ? TMP_CACHE : DATA_CACHE;
 
 const PDOK_WFS = 'https://service.pdok.nl/lv/bag/wfs/v2_0';
 
@@ -19,12 +24,15 @@ interface BagIdCache {
 }
 
 function loadCache(): BagIdCache | null {
-  try {
-    if (fs.existsSync(cachePath)) {
-      return JSON.parse(fs.readFileSync(cachePath, 'utf-8')) as BagIdCache;
+  // Try the primary cache path first, then fall back to the bundled data cache
+  for (const p of [cachePath, DATA_CACHE]) {
+    try {
+      if (fs.existsSync(p)) {
+        return JSON.parse(fs.readFileSync(p, 'utf-8')) as BagIdCache;
+      }
+    } catch {
+      // corrupt — try next
     }
-  } catch {
-    // corrupt — ignore
   }
   return null;
 }
