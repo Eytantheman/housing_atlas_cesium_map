@@ -1,8 +1,1 @@
-{
-  "buildCommand": "cd server && npm install && cp -r data ../api/data && cd ../client && npm install && npm run build",
-  "outputDirectory": "client/dist",
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/(.*)",     "destination": "/index.html" }
-  ]
-}
+{"buildCommand":"npm run build","outputDirectory":"dist","rewrites":[{"source":"/(.*)","destination":"/index.html"}]}
