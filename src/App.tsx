@@ -87,28 +87,13 @@ export default function App() {
         onProjectSelect={p => flyTo(p)}
       />
 
-      {/* Title + Filters — top left */}
-      <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, width: 260, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ fontFamily: 'system-ui', fontSize: 'clamp(13px,1.35vw,17px)', fontWeight: 800, lineHeight: 1.15, letterSpacing: '0.03em', color: '#fff', textTransform: 'uppercase', textShadow: '0 1px 4px rgba(0,0,0,0.6)', pointerEvents: 'none', userSelect: 'none' }}>
-          Augmented Atlas<br />
-          <span style={{ fontWeight: 400, letterSpacing: '0.06em', fontSize: '0.78em', opacity: 0.65 }}>of Social Housing in the NL</span>
+      {/* Title — top left */}
+      <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 10, pointerEvents: 'none', userSelect: 'none' }}>
+        <div style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 28, fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.01em', color: '#fff', textTransform: 'uppercase', textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}>
+          Augmented Atlas
         </div>
-        <div style={glassCard}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>Filters</span>
-            <button onClick={() => { setCityFilter(''); setSearch(''); setActiveCity(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4623A', fontSize: 12 }}>Clear all</button>
-          </div>
-          <div>
-            <div style={labelSt}>City</div>
-            <select value={cityFilter} onChange={e => handleCityChange(e.target.value)} style={inputSt}>
-              <option value="">All cities</option>
-              {cities.map(c => <option key={c} value={c}>{c}{CITY_TOURS[c] ? ' ✦' : ''}</option>)}
-            </select>
-          </div>
-          <div>
-            <div style={labelSt}>Search</div>
-            <input type="search" placeholder="Name, architect…" value={search} onChange={e => setSearch(e.target.value)} style={inputSt} />
-          </div>
+        <div style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 12, fontWeight: 400, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', marginTop: 4 }}>
+          of Social Housing in the NL
         </div>
       </div>
 
