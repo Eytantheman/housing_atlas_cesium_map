@@ -9,15 +9,13 @@ import allProjectsData from './data/housing-atlas.json';
 const ALL_PROJECTS = allProjectsData as HousingProject[];
 
 export default function App() {
-  const [selected, setSelected]        = useState<HousingProject | null>(null);
-  const [cityFilter, setCityFilter]    = useState('');
-  const [search, setSearch]            = useState('');
-  const [flyTarget, setFlyTarget]      = useState<FlyTarget | null>(null);
-  const [activeCity, setActiveCity]    = useState<string | null>(null);
-  const [dropdownOpen, setDropdownOpen]= useState(false);
-  const [bearing, setBearing]          = useState(0);
-  const [capture, setCapture]          = useState<Record<string, number> | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [selected, setSelected]     = useState<HousingProject | null>(null);
+  const [cityFilter, setCityFilter]  = useState('');
+  const [search, setSearch]          = useState('');
+  const [flyTarget, setFlyTarget]    = useState<FlyTarget | null>(null);
+  const [activeCity, setActiveCity]  = useState<string | null>(null);
+  const [bearing, setBearing]        = useState(0);
+  const [capture, setCapture]        = useState<Record<string, number> | null>(null);
 
   const cities = useMemo(() => [...new Set(ALL_PROJECTS.map(p => p.city))].sort(), []);
 
@@ -42,24 +40,12 @@ export default function App() {
     [filtered],
   );
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (!dropdownOpen) return;
-    const h = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false);
-    };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [dropdownOpen]);
-
-  // Track bearing from Cesium
   useEffect(() => {
     const h = (e: Event) => setBearing((e as CustomEvent<number>).detail);
     window.addEventListener('cesium:bearing', h);
     return () => window.removeEventListener('cesium:bearing', h);
   }, []);
 
-  // Camera capture
   useEffect(() => {
     const h = (e: Event) => {
       setCapture((e as CustomEvent).detail);
@@ -89,6 +75,9 @@ export default function App() {
     setBearing(0);
   }
 
+  // List panel right edge: 380 (panel) + 16 (gap) = 396 when panel is open
+  const listRight = selected ? 396 : 16;
+
   return (
     <div style={{ position: 'relative', height: '100vh', width: '100vw', overflow: 'hidden', background: '#000' }}>
       <CesiumViewer
@@ -98,7 +87,7 @@ export default function App() {
         onProjectSelect={p => flyTo(p)}
       />
 
-      {/* Title + Filters */}
+      {/* Title + Filters — top left */}
       <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, width: 260, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontFamily: 'system-ui', fontSize: 'clamp(13px,1.35vw,17px)', fontWeight: 800, lineHeight: 1.15, letterSpacing: '0.03em', color: '#fff', textTransform: 'uppercase', textShadow: '0 1px 4px rgba(0,0,0,0.6)', pointerEvents: 'none', userSelect: 'none' }}>
           Augmented Atlas<br />
@@ -123,30 +112,56 @@ export default function App() {
         </div>
       </div>
 
-      {/* North + List */}
-      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button onClick={resetNorth} title="Reset to north" style={{ ...glassBtn, width: 36, padding: 0 }}>
-          <span style={{ display: 'inline-block', transform: `rotate(${-bearing}deg)`, transition: 'transform 0.15s', color: bearing === 0 ? '#C4623A' : '#fff', fontSize: 16 }}>↑</span>
-        </button>
-        <div ref={dropdownRef} style={{ position: 'relative' }}>
-          <button onClick={() => setDropdownOpen(o => !o)} style={{ ...glassBtn, background: dropdownOpen ? '#C4623A' : 'rgba(255,255,255,0.12)' }}>
-            List ({filtered.length})
+      {/* Persistent project list — top right, slides left when panel opens */}
+      <div style={{
+        position: 'absolute',
+        top: 16,
+        right: listRight,
+        transition: 'right 0.38s cubic-bezier(0.4,0,0.2,1)',
+        zIndex: 10,
+        width: 260,
+        maxHeight: 'calc(100vh - 32px)',
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'rgba(15,15,15,0.92)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 12,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+        overflow: 'hidden',
+      }}>
+        {/* List header with north button */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
+          <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>Projects ({filtered.length})</span>
+          <button onClick={resetNorth} title="Reset to north" style={{ ...glassBtn, width: 28, height: 28, padding: 0, borderRadius: 6, fontSize: 14 }}>
+            <span style={{ display: 'inline-block', transform: `rotate(${-bearing}deg)`, transition: 'transform 0.15s', color: bearing === 0 ? '#C4623A' : '#fff' }}>↑</span>
           </button>
-          {dropdownOpen && (
-            <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 260, maxHeight: 380, overflowY: 'auto', background: 'rgba(15,15,15,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
-              {sortedList.length === 0 && <div style={{ padding: 16, color: 'rgba(255,255,255,0.3)', fontSize: 13, textAlign: 'center' }}>No results</div>}
-              {sortedList.map((p, i) => (
-                <button key={p.id} onClick={() => { setDropdownOpen(false); flyTo(p); }}
-                  style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '10px 16px', background: 'none', border: 'none', borderTop: i ? '1px solid rgba(255,255,255,0.06)' : 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 500, color: '#fff' }}>{p.name}</span>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{p.city}</span>
-                </button>
-              ))}
-            </div>
+        </div>
+
+        {/* Scrollable project rows */}
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {sortedList.length === 0 && (
+            <div style={{ padding: 16, color: 'rgba(255,255,255,0.3)', fontSize: 13, textAlign: 'center' }}>No results</div>
           )}
+          {sortedList.map((p, i) => (
+            <button
+              key={p.id}
+              onClick={() => flyTo(p)}
+              style={{
+                display: 'flex', flexDirection: 'column', gap: 2,
+                padding: '9px 14px',
+                background: selected?.id === p.id ? 'rgba(196,98,58,0.18)' : 'none',
+                border: 'none',
+                borderTop: i ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                width: '100%', textAlign: 'left', cursor: 'pointer',
+              }}
+              onMouseEnter={e => { if (selected?.id !== p.id) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = selected?.id === p.id ? 'rgba(196,98,58,0.18)' : 'none'; }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#fff' }}>{p.name}</span>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{p.city}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -168,7 +183,6 @@ export default function App() {
 
       <ProjectPanel project={selected} onClose={() => setSelected(null)} />
 
-      {/* Camera capture toast (press C) */}
       {capture && <CameraToast capture={capture} defaultId={selected?.id ?? null} projects={ALL_PROJECTS} onDismiss={() => setCapture(null)} />}
     </div>
   );
@@ -181,7 +195,7 @@ function CameraToast({ capture, defaultId, projects, onDismiss }: {
   onDismiss: () => void;
 }) {
   const [assignedId, setAssignedId] = useState<string>(defaultId != null ? String(defaultId) : '');
-  const snippet = `  ${assignedId || '??'}: { lat: ${capture.lat}, lng: ${capture.lng}, height: ${capture.height}, pitch: ${capture.pitch}, heading: ${capture.heading} },`; // remove lat/lng if x/y is already correct
+  const snippet = `  ${assignedId || '??'}: { lat: ${capture.lat}, lng: ${capture.lng}, height: ${capture.height}, pitch: ${capture.pitch}, heading: ${capture.heading} },`;
   const assignedProject = projects.find(p => p.id === Number(assignedId));
 
   return (
@@ -193,27 +207,20 @@ function CameraToast({ capture, defaultId, projects, onDismiss }: {
       <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, marginBottom: 10 }}>
         h={capture.height}m · pitch={capture.pitch}° · heading={capture.heading}°
       </div>
-
       <div style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assign to project</div>
-        <select
-          value={assignedId}
-          onChange={e => setAssignedId(e.target.value)}
-          style={{ width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, color: '#fff', fontSize: 12, padding: '5px 8px', outline: 'none', cursor: 'pointer' }}
-        >
+        <select value={assignedId} onChange={e => setAssignedId(e.target.value)}
+          style={{ width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, color: '#fff', fontSize: 12, padding: '5px 8px', outline: 'none', cursor: 'pointer' }}>
           <option value="">— pick a project —</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.id}. {p.name}</option>)}
         </select>
-        {assignedProject && (
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>{assignedProject.city}</div>
-        )}
+        {assignedProject && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>{assignedProject.city}</div>}
       </div>
-
       <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: '7px 10px', lineHeight: 1.6, whiteSpace: 'pre', fontSize: 11, color: '#ccc' }}>{snippet}</div>
-      <button
-        onClick={() => navigator.clipboard.writeText(snippet)}
-        style={{ marginTop: 8, background: '#C4623A', border: 'none', borderRadius: 6, color: '#fff', fontSize: 11, padding: '5px 12px', cursor: 'pointer', width: '100%', fontFamily: 'monospace' }}
-      >Copy to clipboard</button>
+      <button onClick={() => navigator.clipboard.writeText(snippet)}
+        style={{ marginTop: 8, background: '#C4623A', border: 'none', borderRadius: 6, color: '#fff', fontSize: 11, padding: '5px 12px', cursor: 'pointer', width: '100%', fontFamily: 'monospace' }}>
+        Copy to clipboard
+      </button>
     </div>
   );
 }
