@@ -66,10 +66,10 @@ export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSel
       viewer.scene.primitives.add(tileset);
 
       viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(4.895, 52.370, 1800),
+        destination: Cesium.Cartesian3.fromDegrees(5.9836, 51.652305, 337476),
         orientation: {
-          heading: Cesium.Math.toRadians(-10),
-          pitch:   Cesium.Math.toRadians(-35),
+          heading: Cesium.Math.toRadians(2.2),
+          pitch:   Cesium.Math.toRadians(-78.4),
           roll:    0,
         },
         duration: 0,
