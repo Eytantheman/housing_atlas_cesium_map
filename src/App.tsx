@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { CesiumViewer, type FlyTarget } from './components/CesiumViewer';
 import { ProjectPanel } from './components/ProjectPanel';
-import { CITY_TOURS } from './config/tours';
 import { PROJECT_CAMERAS } from './config/cameras';
 import type { HousingProject } from './types';
 import allProjectsData from './data/housing-atlas.json';
