@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { CesiumViewer, type FlyTarget } from './components/CesiumViewer';
 import { ProjectPanel } from './components/ProjectPanel';
 import { CITY_VIEWS, CITY_TOURS } from './config/tours';

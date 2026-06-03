@@ -27,7 +27,7 @@ export function ProjectPanel({ project, onClose }: Props) {
   const [shown, setShown]     = useState<HousingProject | null>(null);
   const [axoIdx, setAxoIdx]   = useState(0);
   const [lbImg, setLbImg]     = useState<{ src: string; cap: string } | null>(null);
-  const timerRef              = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef              = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     clearTimeout(timerRef.current);

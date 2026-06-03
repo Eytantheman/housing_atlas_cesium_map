@@ -47,7 +47,8 @@ export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSel
       selectionIndicator:   false,
       timeline:             false,
       creditContainer:      document.createElement('div'),
-      imageryProvider:      false as any,
+      // @ts-expect-error: imageryProvider:false disables the default imagery layer
+      imageryProvider:      false,
     });
 
     viewer.scene.skyBox.show          = false;
