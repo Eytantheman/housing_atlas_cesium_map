@@ -1,0 +1,4 @@
+{
+  "__comment": "Map project id (as string) to a SuperSplat .splat or .ply asset URL. Add entries here to enable 3D scenes.",
+  "22": "https://your-cdn.com/kasbah.splat"
+}
