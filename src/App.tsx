@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { CesiumViewer, type FlyTarget } from './components/CesiumViewer';
 import { ProjectPanel } from './components/ProjectPanel';
-import { CITY_VIEWS, CITY_TOURS } from './config/tours';
+import { CITY_TOURS } from './config/tours';
 import { PROJECT_CAMERAS } from './config/cameras';
 import type { HousingProject } from './types';
 import allProjectsData from './data/housing-atlas.json';
@@ -9,35 +9,14 @@ import allProjectsData from './data/housing-atlas.json';
 const ALL_PROJECTS = allProjectsData as HousingProject[];
 
 export default function App() {
-  const [selected, setSelected]     = useState<HousingProject | null>(null);
-  const [cityFilter, setCityFilter]  = useState('');
-  const [search, setSearch]          = useState('');
-  const [flyTarget, setFlyTarget]    = useState<FlyTarget | null>(null);
-  const [activeCity, setActiveCity]  = useState<string | null>(null);
-  const [bearing, setBearing]        = useState(0);
-  const [capture, setCapture]        = useState<Record<string, number> | null>(null);
-
-  const cities = useMemo(() => [...new Set(ALL_PROJECTS.map(p => p.city))].sort(), []);
-
-  const filtered = useMemo(() => ALL_PROJECTS.filter(p => {
-    if (cityFilter && p.city !== cityFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!`${p.name} ${p.architect} ${p.social_org ?? ''}`.toLowerCase().includes(q)) return false;
-    }
-    return true;
-  }), [cityFilter, search]);
-
-  const tourProjects = useMemo(() => {
-    if (!activeCity) return [];
-    return (CITY_TOURS[activeCity] ?? [])
-      .map(id => ALL_PROJECTS.find(p => p.id === id))
-      .filter((p): p is HousingProject => p != null && p.lat != null && p.lng != null);
-  }, [activeCity]);
+  const [selected, setSelected] = useState<HousingProject | null>(null);
+  const [flyTarget, setFlyTarget] = useState<FlyTarget | null>(null);
+  const [bearing, setBearing] = useState(0);
+  const [capture, setCapture] = useState<Record<string, number> | null>(null);
 
   const sortedList = useMemo(
-    () => [...filtered].sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name)),
-    [filtered],
+    () => [...ALL_PROJECTS].sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name)),
+    [],
   );
 
   useEffect(() => {
@@ -62,27 +41,18 @@ export default function App() {
     setSelected(p);
   }
 
-  function handleCityChange(city: string) {
-    setCityFilter(city);
-    setActiveCity(city || null);
-    if (!city) return;
-    const v = CITY_VIEWS[city];
-    if (v) setFlyTarget({ lat: v.lat, lng: v.lng, height: v.height, pitch: v.pitch, id: Date.now() });
-  }
-
   function resetNorth() {
     window.dispatchEvent(new Event('cesium:reset-north'));
     setBearing(0);
   }
 
-  // List panel right edge: 380 (panel) + 16 (gap) = 396 when panel is open
   const listRight = selected ? 396 : 16;
 
   return (
     <div style={{ position: 'relative', height: '100vh', width: '100vw', overflow: 'hidden', background: '#000' }}>
       <CesiumViewer
-        projects={filtered.filter(p => p.lat != null)}
-        tourProjects={tourProjects}
+        projects={ALL_PROJECTS.filter(p => p.lat != null)}
+        tourProjects={[]}
         flyToTarget={flyTarget}
         onProjectSelect={p => flyTo(p)}
       />
@@ -97,49 +67,26 @@ export default function App() {
         </div>
       </div>
 
-      {/* Persistent project list — top right, slides left when panel opens */}
+      {/* Persistent project list */}
       <div style={{
-        position: 'absolute',
-        top: 16,
-        right: listRight,
+        position: 'absolute', top: 16, right: listRight,
         transition: 'right 0.38s cubic-bezier(0.4,0,0.2,1)',
-        zIndex: 10,
-        width: 260,
-        maxHeight: 'calc(100vh - 32px)',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'rgba(15,15,15,0.92)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 12,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-        overflow: 'hidden',
+        zIndex: 10, width: 260, maxHeight: 'calc(100vh - 32px)',
+        display: 'flex', flexDirection: 'column',
+        background: 'rgba(15,15,15,0.92)', backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.5)', overflow: 'hidden',
       }}>
-        {/* List header with north button */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
-          <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>Projects ({filtered.length})</span>
+          <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>Projects ({ALL_PROJECTS.length})</span>
           <button onClick={resetNorth} title="Reset to north" style={{ ...glassBtn, width: 28, height: 28, padding: 0, borderRadius: 6, fontSize: 14 }}>
             <span style={{ display: 'inline-block', transform: `rotate(${-bearing}deg)`, transition: 'transform 0.15s', color: bearing === 0 ? '#C4623A' : '#fff' }}>↑</span>
           </button>
         </div>
-
-        {/* Scrollable project rows */}
         <div style={{ overflowY: 'auto', flex: 1 }}>
-          {sortedList.length === 0 && (
-            <div style={{ padding: 16, color: 'rgba(255,255,255,0.3)', fontSize: 13, textAlign: 'center' }}>No results</div>
-          )}
           {sortedList.map((p, i) => (
-            <button
-              key={p.id}
-              onClick={() => flyTo(p)}
-              style={{
-                display: 'flex', flexDirection: 'column', gap: 2,
-                padding: '9px 14px',
-                background: selected?.id === p.id ? 'rgba(196,98,58,0.18)' : 'none',
-                border: 'none',
-                borderTop: i ? '1px solid rgba(255,255,255,0.06)' : 'none',
-                width: '100%', textAlign: 'left', cursor: 'pointer',
-              }}
+            <button key={p.id} onClick={() => flyTo(p)}
+              style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '9px 14px', background: selected?.id === p.id ? 'rgba(196,98,58,0.18)' : 'none', border: 'none', borderTop: i ? '1px solid rgba(255,255,255,0.06)' : 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
               onMouseEnter={e => { if (selected?.id !== p.id) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = selected?.id === p.id ? 'rgba(196,98,58,0.18)' : 'none'; }}
             >
@@ -149,22 +96,6 @@ export default function App() {
           ))}
         </div>
       </div>
-
-      {/* Tour legend */}
-      {activeCity && tourProjects.length > 0 && (
-        <div style={{ position: 'absolute', bottom: 24, left: 16, zIndex: 10, maxWidth: 260, background: 'rgba(15,15,15,0.88)', backdropFilter: 'blur(12px)', borderRadius: 12, padding: '12px 16px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tour · {activeCity}</span>
-            <button onClick={() => { setActiveCity(null); setCityFilter(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C4623A', fontSize: 12, padding: 0 }}>✕</button>
-          </div>
-          {tourProjects.map((p, i) => (
-            <div key={p.id} onClick={() => flyTo(p)} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0', cursor: 'pointer', borderTop: i ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
-              <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#C4623A', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</div>
-              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', lineHeight: 1.4 }}>{p.name}</span>
-            </div>
-          ))}
-        </div>
-      )}
 
       <ProjectPanel project={selected} onClose={() => setSelected(null)} />
 
@@ -210,7 +141,4 @@ function CameraToast({ capture, defaultId, projects, onDismiss }: {
   );
 }
 
-const glassCard: React.CSSProperties = { background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)', borderRadius: 12, padding: '14px 16px', boxShadow: '0 4px 20px rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.13)', display: 'flex', flexDirection: 'column', gap: 12 };
-const glassBtn: React.CSSProperties  = { padding: '0 16px', background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, cursor: 'pointer', color: '#fff', fontSize: 13, boxShadow: '0 2px 8px rgba(0,0,0,0.3)', height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const labelSt: React.CSSProperties   = { fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' };
-const inputSt: React.CSSProperties   = { width: '100%', padding: '7px 10px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 13, outline: 'none', cursor: 'pointer', boxSizing: 'border-box' };
+const glassBtn: React.CSSProperties = { padding: '0 16px', background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, cursor: 'pointer', color: '#fff', fontSize: 13, boxShadow: '0 2px 8px rgba(0,0,0,0.3)', height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' };
