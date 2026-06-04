@@ -18,14 +18,13 @@ export interface FlyTarget {
 }
 
 interface Props {
-  projects: HousingProject[];
   tourProjects: HousingProject[];
   flyToTarget: FlyTarget | null;
   onProjectSelect: (p: HousingProject) => void;
   showImagePlanes: boolean;
 }
 
-export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSelect, showImagePlanes }: Props) {
+export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, showImagePlanes }: Props) {
   const containerRef      = useRef<HTMLDivElement>(null);
   const viewerRef         = useRef<any>(null);
   const tilesetRef        = useRef<any>(null);

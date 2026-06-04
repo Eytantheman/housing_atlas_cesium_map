@@ -64,7 +64,6 @@ export default function App() {
   return (
     <div style={{ position: 'relative', height: '100vh', width: '100vw', overflow: 'hidden', background: '#000' }}>
       <CesiumViewer
-        projects={ALL_PROJECTS.filter(p => p.lat != null)}
         tourProjects={[]}
         flyToTarget={flyTarget}
         onProjectSelect={p => flyTo(p)}
