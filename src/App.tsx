@@ -12,6 +12,8 @@ export default function App() {
   const [flyTarget, setFlyTarget] = useState<FlyTarget | null>(null);
   const [bearing, setBearing] = useState(0);
   const [capture, setCapture] = useState<Record<string, number> | null>(null);
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [showDrawings, setShowDrawings] = useState(true);
 
   const sortedList = useMemo(
     () => [...ALL_PROJECTS].sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name)),
@@ -31,6 +33,18 @@ export default function App() {
     };
     window.addEventListener('cesium:capture', h);
     return () => window.removeEventListener('cesium:capture', h);
+  }, []);
+
+  useEffect(() => {
+    const h = (e: Event) => setVideoSrc((e as CustomEvent<string>).detail);
+    window.addEventListener('cesium:video-open', h);
+    return () => window.removeEventListener('cesium:video-open', h);
+  }, []);
+
+  useEffect(() => {
+    const h = (e: Event) => setFlyTarget((e as CustomEvent).detail);
+    window.addEventListener('cesium:image-cam', h);
+    return () => window.removeEventListener('cesium:image-cam', h);
   }, []);
 
   function flyTo(p: HousingProject) {
@@ -54,6 +68,7 @@ export default function App() {
         tourProjects={[]}
         flyToTarget={flyTarget}
         onProjectSelect={p => flyTo(p)}
+        showImagePlanes={showDrawings}
       />
 
       {/* Title — top left */}
@@ -78,9 +93,14 @@ export default function App() {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
           <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>Projects ({ALL_PROJECTS.length})</span>
-          <button onClick={resetNorth} title="Reset to north" style={{ ...glassBtn, width: 28, height: 28, padding: 0, borderRadius: 6, fontSize: 14 }}>
-            <span style={{ display: 'inline-block', transform: `rotate(${-bearing}deg)`, transition: 'transform 0.15s', color: bearing === 0 ? '#C4623A' : '#fff' }}>↑</span>
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => setShowDrawings(v => !v)} title="Toggle drawings" style={{ ...glassBtn, width: 28, height: 28, padding: 0, borderRadius: 6, fontSize: 12, color: showDrawings ? '#C4623A' : 'rgba(255,255,255,0.4)' }}>
+              ⬜
+            </button>
+            <button onClick={resetNorth} title="Reset to north" style={{ ...glassBtn, width: 28, height: 28, padding: 0, borderRadius: 6, fontSize: 14 }}>
+              <span style={{ display: 'inline-block', transform: `rotate(${-bearing}deg)`, transition: 'transform 0.15s', color: bearing === 0 ? '#C4623A' : '#fff' }}>↑</span>
+            </button>
+          </div>
         </div>
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {sortedList.map((p, i) => (
@@ -98,7 +118,55 @@ export default function App() {
 
       <ProjectPanel project={selected} onClose={() => setSelected(null)} />
 
+      {videoSrc && <VideoOverlay videoSrc={videoSrc} onClose={() => setVideoSrc(null)} />}
+
       {capture && <CameraToast capture={capture} defaultId={selected?.id ?? null} projects={ALL_PROJECTS} onDismiss={() => setCapture(null)} />}
+    </div>
+  );
+}
+
+function VideoOverlay({ videoSrc, onClose }: { videoSrc: string; onClose: () => void }) {
+  const [pos] = useState(() => {
+    const w = Math.min(window.innerWidth * 0.41, 550);
+    const h = w * (9 / 16);
+    const pad = 30; // clears the X button overhang
+    const x = pad + Math.random() * (window.innerWidth  - w - pad * 2);
+    const y = pad + Math.random() * (window.innerHeight - h - pad * 2);
+    return { x: Math.round(x), y: Math.round(y), w: Math.round(w) };
+  });
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 200, pointerEvents: 'none' }}>
+      <div
+        style={{
+          position: 'absolute',
+          left: pos.x, top: pos.y, width: pos.w,
+          aspectRatio: '16/9',
+          border: '3px solid #e02020',
+          boxShadow: '0 0 0 1px rgba(224,32,32,0.25), 0 0 40px rgba(224,32,32,0.2)',
+          background: '#000',
+          pointerEvents: 'auto',
+        }}
+      >
+        <video
+          src={videoSrc}
+          autoPlay
+          controls
+          style={{ width: '100%', height: '100%', display: 'block' }}
+        />
+        <button
+          onClick={onClose}
+          style={{
+            position: 'absolute', top: -18, right: -18,
+            width: 36, height: 36,
+            background: '#e02020', border: '2px solid rgba(255,255,255,0.2)',
+            borderRadius: '50%', color: '#fff',
+            fontSize: 17, fontWeight: 700, lineHeight: 1,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.6)',
+          }}
+        >✕</button>
+      </div>
     </div>
   );
 }

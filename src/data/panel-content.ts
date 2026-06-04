@@ -4,9 +4,14 @@ export interface AxoSlide {
   pdfUrl: string;
 }
 
+export interface CamPos {
+  lat: number; lng: number; height: number; pitch: number; heading: number;
+}
+
 export interface ThumbItem {
   src: string;
   caption: string;
+  camPos?: CamPos;
 }
 
 export interface PanelContent {
@@ -41,8 +46,8 @@ Beyond the private rooms, Hertzberger placed strong emphasis on shared spaces. T
       },
     ],
     thumbs: [
-      { src: '/images/27/thumb-0.jpg', caption: '01.1  Hertzberger archive (1961)' },
-      { src: '/images/27/thumb-1.jpg', caption: '01.2  Hertzberger archive (1961)' },
+      { src: '/images/27/thumb-0.jpg', caption: '01.1  Hertzberger archive (1961)', camPos: { lat: 52.364200, lng: 4.905300, height: 44.5, pitch: -8, heading: 15 } },
+      { src: '/images/27/thumb-1.jpg', caption: '01.2  Hertzberger archive (1961)', camPos: { lat: 52.365038, lng: 4.905538, height: 55.3, pitch: 4, heading: 19.1 } },
       { src: '/images/27/thumb-2.jpg', caption: '01.3  Hertzberger archive (1961)' },
       { src: '/images/27/thumb-3.jpg', caption: '01.4  Hertzberger archive (1961)' },
       { src: '/images/27/thumb-4.jpg', caption: '02.1  Photo: Johan van der Keuken (1961)' },

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { HousingProject } from '../types';
 import { PANEL_CONTENT } from '../data/panel-content';
+import type { CamPos } from '../data/panel-content';
 
 const TAB_BG  = 'rgba(14, 14, 12, 0.96)';   // solid for the tab
 const PANEL_BG = 'rgba(14, 14, 12, 0.82)';  // semi-transparent panel
@@ -26,7 +27,12 @@ export function ProjectPanel({ project, onClose }: Props) {
   const [visible, setVisible] = useState(false);
   const [shown, setShown]     = useState<HousingProject | null>(null);
   const [axoIdx, setAxoIdx]   = useState(0);
-  const [lbImg, setLbImg]     = useState<{ src: string; cap: string } | null>(null);
+  const [lbImg, setLbImg]     = useState<{ src: string; cap: string; camPos?: CamPos } | null>(null);
+
+  function openImage(src: string, cap: string, camPos?: CamPos) {
+    setLbImg({ src, cap, camPos });
+    if (camPos) window.dispatchEvent(new CustomEvent('cesium:image-cam', { detail: { ...camPos, id: Date.now() } }));
+  }
   const timerRef              = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -140,7 +146,7 @@ export function ProjectPanel({ project, onClose }: Props) {
             <div>
               <div
                 style={{ width: '100%', aspectRatio: '1/1', overflow: 'hidden', position: 'relative', cursor: 'zoom-in' }}
-                onClick={() => setLbImg({ src: axo.src, cap: axo.caption })}
+                onClick={() => openImage(axo.src, axo.caption)}
               >
                 <img key={axo.src} src={axo.src} alt="Axonometric"
                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -197,8 +203,8 @@ export function ProjectPanel({ project, onClose }: Props) {
                 <p style={{ fontSize: 7.5, letterSpacing: '0.2em', textTransform: 'uppercase', color: INK25, margin: '0 0 0.6rem' }}>Archive</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 3 }}>
                   {thumbs.map((t, i) => (
-                    <Thumb key={i} src={t.src} caption={t.caption}
-                           onOpen={(src, cap) => setLbImg({ src, cap })} />
+                    <Thumb key={i} src={t.src} caption={t.caption} camPos={t.camPos}
+                           onOpen={(src, cap, camPos) => openImage(src, cap, camPos)} />
                   ))}
                 </div>
               </div>
@@ -209,28 +215,80 @@ export function ProjectPanel({ project, onClose }: Props) {
         </div>{/* end inner scrollable */}
       </div>{/* end outer shell */}
 
-      {/* Lightbox */}
-      {lbImg && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(18,17,14,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, cursor: 'zoom-out' }}
-          onClick={() => setLbImg(null)}
-        >
-          <div
-            style={{ position: 'relative', maxWidth: '92vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <button onClick={() => setLbImg(null)} style={{ position: 'absolute', top: '-2rem', right: 0, width: 28, height: 28, background: 'transparent', border: '0.5px solid rgba(255,255,255,0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="10" height="10" viewBox="0 0 10 10" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5" fill="none">
-                <line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/>
-              </svg>
-            </button>
-            <img src={lbImg.src} alt=""
-                 style={{ maxWidth: '100%', maxHeight: '82vh', objectFit: 'contain', display: 'block' }} />
-            <p style={{ fontSize: 9, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.55)', textAlign: 'center', margin: 0 }}>{lbImg.cap}</p>
-          </div>
-        </div>
-      )}
+      {lbImg && <ImageLightbox src={lbImg.src} caption={lbImg.cap} onClose={() => setLbImg(null)} />}
     </>
+  );
+}
+
+/* ── Image lightbox (red-framed, randomly positioned) ── */
+
+function ImageLightbox({ src, caption, onClose }: { src: string; caption: string; onClose: () => void }) {
+  const [pos, setPos] = useState(() => {
+    const w = 600;
+    const pad = 30;
+    const x = pad + Math.random() * Math.max(0, window.innerWidth  - w - pad * 2);
+    const y = pad + Math.random() * Math.max(0, window.innerHeight - 400 - pad * 2);
+    return { x: Math.round(x), y: Math.round(y), w };
+  });
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+
+  function onMouseDown(e: React.MouseEvent) {
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y };
+    document.body.style.cursor = 'grabbing';
+
+    function onMove(e: MouseEvent) {
+      if (!dragRef.current) return;
+      const { startX, startY, originX, originY } = dragRef.current;
+      setPos(p => ({ ...p, x: originX + e.clientX - startX, y: originY + e.clientY - startY }));
+    }
+    function onUp() {
+      dragRef.current = null;
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, pointerEvents: 'none' }}>
+      <div
+        onMouseDown={onMouseDown}
+        style={{
+          position: 'absolute', left: pos.x, top: pos.y, width: pos.w,
+          border: '2px solid #e02020',
+          boxShadow: '0 0 0 1px rgba(224,32,32,0.15), 0 8px 32px rgba(0,0,0,0.55)',
+          background: '#0a0a0a',
+          pointerEvents: 'auto',
+          cursor: 'grab',
+          userSelect: 'none',
+        }}
+      >
+        <img src={src} alt="" draggable={false}
+             style={{ width: '100%', display: 'block', maxHeight: '55vh', objectFit: 'contain', cursor: 'default' }} />
+        {caption && (
+          <p style={{ margin: 0, padding: '4px 8px 5px', fontSize: 8, letterSpacing: '0.07em', color: 'rgba(255,255,255,0.38)' }}>
+            {caption}
+          </p>
+        )}
+        <button onClick={onClose} style={{
+          position: 'absolute', top: 6, right: 6,
+          width: 18, height: 18,
+          background: '#e02020',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 0,
+        }}>
+          <svg width="7" height="7" viewBox="0 0 7 7" stroke="rgba(255,255,255,0.85)" strokeWidth="1.2" fill="none">
+            <line x1="1" y1="1" x2="6" y2="6"/><line x1="6" y1="1" x2="1" y2="6"/>
+          </svg>
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -257,10 +315,10 @@ function AxoBtn({ onClick, dir }: { onClick: React.MouseEventHandler; dir: 'prev
   );
 }
 
-function Thumb({ src, caption, onOpen }: { src: string; caption: string; onOpen: (src: string, cap: string) => void }) {
+function Thumb({ src, caption, camPos, onOpen }: { src: string; caption: string; camPos?: CamPos; onOpen: (src: string, cap: string, camPos?: CamPos) => void }) {
   const [hovered, setHovered] = useState(false);
   return (
-    <div onClick={() => onOpen(src, caption)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+    <div onClick={() => onOpen(src, caption, camPos)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       style={{ position: 'relative', aspectRatio: '1/1', background: '#2a2825', overflow: 'hidden', cursor: 'zoom-in' }}>
       <img src={src} loading="lazy"
            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: hovered ? 0.75 : 1, transition: 'opacity 0.2s' }} />

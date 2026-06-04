@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { HousingProject } from '../types';
+import { IMAGE_PLANES } from '../config/image-planes';
+import { VIDEO_HOTSPOTS } from '../config/video-hotspots';
 
 // Cesium is loaded via CDN script tag — access the global
 declare const Cesium: typeof import('cesium');
@@ -20,14 +22,15 @@ interface Props {
   tourProjects: HousingProject[];
   flyToTarget: FlyTarget | null;
   onProjectSelect: (p: HousingProject) => void;
+  showImagePlanes: boolean;
 }
 
-export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSelect }: Props) {
-  const containerRef   = useRef<HTMLDivElement>(null);
-  const viewerRef      = useRef<any>(null);
-  const tilesetRef     = useRef<any>(null);
-  const tourPolyRef    = useRef<any>(null);
-  const markerEntities = useRef<any[]>([]);
+export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSelect, showImagePlanes }: Props) {
+  const containerRef      = useRef<HTMLDivElement>(null);
+  const viewerRef         = useRef<any>(null);
+  const tilesetRef        = useRef<any>(null);
+  const tourPolyRef       = useRef<any>(null);
+  const imagePlaneEntities = useRef<any[]>([]);
 
   // ── Initialise viewer once ───────────────────────────────────────────────
   useEffect(() => {
@@ -59,12 +62,78 @@ export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSel
 
     viewerRef.current = viewer;
 
-    // ── Google Photorealistic 3D Tiles ────────────────────────────────────
+    // ── Image planes (architectural drawings) ────────────────────────────────
+    for (const p of IMAGE_PLANES) {
+      const pos = Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.height);
+      const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(p.heading), 0, 0);
+      const orientation = Cesium.Transforms.headingPitchRollQuaternion(pos, hpr);
+      // facade: UNIT_Y = faces heading direction (vertical plane)
+      // plan:   UNIT_Z = faces up (horizontal plane)
+      const normal = p.type === 'plan' ? Cesium.Cartesian3.UNIT_Z : Cesium.Cartesian3.UNIT_Y;
+      const ent = viewer.entities.add({
+        id: `image-plane-${p.id}`,
+        position: pos,
+        orientation,
+        plane: {
+          plane: new Cesium.Plane(normal, 0),
+          dimensions: new Cesium.Cartesian2(p.widthM, p.heightM),
+          material: new Cesium.ImageMaterialProperty({
+            image: p.imageUrl,
+            transparent: true,
+            color: new Cesium.Color(1, 1, 1, p.opacity ?? 1),
+          }),
+          outline: false,
+        },
+      });
+      imagePlaneEntities.current.push(ent);
+    }
+
+    // ── Video hotspots (red frame in 3D, hover → video overlay) ─────────────
+    const videoEntities: Record<string, any> = {};
+    for (const h of VIDEO_HOTSPOTS) {
+      const pos = Cesium.Cartesian3.fromDegrees(h.lng, h.lat, h.height);
+      const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(h.heading), 0, 0);
+      const orientation = Cesium.Transforms.headingPitchRollQuaternion(pos, hpr);
+      videoEntities[h.id] = viewer.entities.add({
+        id: `video-hotspot-${h.id}`,
+        position: pos,
+        orientation,
+        plane: {
+          plane: new Cesium.Plane(Cesium.Cartesian3.UNIT_Y, 0),
+          dimensions: new Cesium.Cartesian2(h.widthM, h.heightM),
+          material: Cesium.Color.RED.withAlpha(0.12),
+          outline: true,
+          outlineColor: Cesium.Color.RED,
+        },
+      });
+
+      // Perpendicular line from frame center, 10 m in the facing direction
+      const transform = Cesium.Transforms.headingPitchRollToFixedFrame(pos, hpr);
+      const fwd = Cesium.Matrix4.multiplyByPointAsVector(
+        transform, new Cesium.Cartesian3(0, 1, 0), new Cesium.Cartesian3()
+      );
+      const lineEnd = Cesium.Cartesian3.add(
+        pos,
+        Cesium.Cartesian3.multiplyByScalar(fwd, 200, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3()
+      );
+      viewer.entities.add({
+        polyline: {
+          positions: [pos, lineEnd],
+          width: 2,
+          material: Cesium.Color.RED,
+          arcType: Cesium.ArcType.NONE,
+        },
+      });
+    }
+
+    // ── Cesium Ion (asset 2275207 = Google Photorealistic 3D Tiles, works in EEA) ──
+    // NOTE: Direct Google Maps Tiles API is blocked in the EEA (Netherlands).
+    // Cesium Ion proxies the same tiles without the regional restriction.
     Cesium.Cesium3DTileset.fromIonAssetId(2275207, { showCreditsOnScreen: true })
     .then((tileset: any) => {
       tilesetRef.current = tileset;
       viewer.scene.primitives.add(tileset);
-
       viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(5.9836, 51.652305, 337476),
         orientation: {
@@ -74,7 +143,13 @@ export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSel
         },
         duration: 0,
       });
-    }).catch((e: any) => console.error('Google 3D Tiles failed:', e));
+    }).catch((e: any) => console.error('Cesium Ion 3D Tiles failed:', e));
+
+    // ── Direct Google Maps Tiles API option (blocked in EEA) ────────────────
+    // Cesium.Cesium3DTileset.fromUrl(
+    //   `https://tile.googleapis.com/v1/3dtiles/root.json?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}`,
+    //   { showCreditsOnScreen: true }
+    // ).then((tileset: any) => { ... });
 
     // ── Bearing events ────────────────────────────────────────────────────
     viewer.scene.postRender.addEventListener(() => {
@@ -113,11 +188,55 @@ export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSel
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((click: any) => {
       const picked = viewer.scene.pick(click.position);
-      if (picked?.id instanceof Cesium.Entity) {
+      if (!picked?.id) return;
+      const entId: string | undefined = picked.id?.id;
+      // Video hotspot click
+      if (entId?.startsWith('video-hotspot-')) {
+        const id = entId.slice('video-hotspot-'.length);
+        const hotspot = VIDEO_HOTSPOTS.find(h => h.id === id);
+        if (hotspot) window.dispatchEvent(new CustomEvent('cesium:video-open', { detail: hotspot.videoSrc }));
+        return;
+      }
+      // Project marker click
+      if (picked.id instanceof Cesium.Entity) {
         const proj = picked.id.properties?.getValue(Cesium.JulianDate.now())?.project as HousingProject | undefined;
         if (proj) onProjectSelect(proj);
       }
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    // ── Shift+Click → log world position (helps align image planes) ──────────
+    handler.setInputAction((click: any) => {
+      const pos = viewer.scene.pickPosition(click.position);
+      if (!pos) return;
+      const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(pos);
+      const result = {
+        lat:    parseFloat(Cesium.Math.toDegrees(carto.latitude).toFixed(6)),
+        lng:    parseFloat(Cesium.Math.toDegrees(carto.longitude).toFixed(6)),
+        height: parseFloat(carto.height.toFixed(1)),
+      };
+      console.log('📍 Picked:', JSON.stringify(result));
+      window.dispatchEvent(new CustomEvent('cesium:pick', { detail: result }));
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK, Cesium.KeyboardEventModifier.SHIFT);
+
+    // ── Hover over video hotspot → highlight + cursor ─────────────────────
+    let hoveredVideoId: string | null = null;
+    handler.setInputAction((move: any) => {
+      const picked = viewer.scene.pick(move.endPosition);
+      const entId: string | undefined = picked?.id?.id;
+      const newId = entId?.startsWith('video-hotspot-')
+        ? entId.slice('video-hotspot-'.length)
+        : null;
+      if (newId === hoveredVideoId) return;
+
+      if (hoveredVideoId && videoEntities[hoveredVideoId]) {
+        videoEntities[hoveredVideoId].plane.material = Cesium.Color.RED.withAlpha(0.12);
+      }
+      hoveredVideoId = newId;
+      viewer.scene.canvas.style.cursor = newId ? 'pointer' : '';
+      if (newId && videoEntities[newId]) {
+        videoEntities[newId].plane.material = Cesium.Color.RED.withAlpha(0.4);
+      }
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
     return () => {
       handler.destroy();
@@ -128,29 +247,6 @@ export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSel
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sync project markers ─────────────────────────────────────────────────
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-    for (const e of markerEntities.current) viewer.entities.remove(e);
-    markerEntities.current = [];
-
-    for (const p of projects) {
-      if (p.lat == null || p.lng == null) continue;
-      const entity = viewer.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(p.lng, p.lat, 2),
-        properties: { project: p },
-        billboard: {
-          image: makeLabelCanvas(p.id),
-          verticalOrigin:           Cesium.VerticalOrigin.BOTTOM,
-          heightReference:          Cesium.HeightReference.RELATIVE_TO_GROUND,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          scale: 1,
-        },
-      });
-      markerEntities.current.push(entity);
-    }
-  }, [projects]);
 
   // ── Sync tour route polyline ─────────────────────────────────────────────
   useEffect(() => {
@@ -177,6 +273,11 @@ export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSel
     });
   }, [tourProjects]);
 
+  // ── Toggle image plane visibility ───────────────────────────────────────
+  useEffect(() => {
+    for (const ent of imagePlaneEntities.current) ent.show = showImagePlanes;
+  }, [showImagePlanes]);
+
   // ── Fly to target ────────────────────────────────────────────────────────
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -196,24 +297,3 @@ export function CesiumViewer({ projects, tourProjects, flyToTarget, onProjectSel
   return <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />;
 }
 
-function makeLabelCanvas(id: number): HTMLCanvasElement {
-  const size = 32;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
-  ctx.fillStyle = ACCENT;
-  ctx.fill();
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  ctx.fillStyle = '#fff';
-  ctx.font = `bold ${id > 9 ? 11 : 13}px system-ui`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String(id), size / 2, size / 2 + 0.5);
-  return canvas;
-}
