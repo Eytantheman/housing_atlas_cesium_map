@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { HousingProject } from '../types';
 import { PANEL_CONTENT } from '../data/panel-content';
 import type { CamPos } from '../data/panel-content';
+import { IMAGE_PLANES } from '../config/image-planes';
 
 const TAB_BG  = 'rgba(14, 14, 12, 0.96)';   // solid for the tab
 const PANEL_BG = 'rgba(14, 14, 12, 0.82)';  // semi-transparent panel
@@ -17,20 +18,26 @@ const INK60 = 'rgba(232,228,220,0.55)';
 const INK25 = 'rgba(232,228,220,0.22)';
 const INK10 = 'rgba(232,228,220,0.08)';
 const HV    = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+const RED   = '#e02020';
 
 interface Props {
   project: HousingProject | null;
   onClose: () => void;
+  visiblePlanes: Record<string, boolean>;
+  onTogglePlane: (id: string) => void;
 }
 
-export function ProjectPanel({ project, onClose }: Props) {
+export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }: Props) {
   const [visible, setVisible] = useState(false);
   const [shown, setShown]     = useState<HousingProject | null>(null);
   const [axoIdx, setAxoIdx]   = useState(0);
-  const [lbImg, setLbImg]     = useState<{ src: string; cap: string; camPos?: CamPos } | null>(null);
+  const [lbImg, setLbImg]     = useState<{ src: string; cap: string; camPos?: CamPos; planeId?: string } | null>(null);
 
   function openImage(src: string, cap: string, camPos?: CamPos) {
-    setLbImg({ src, cap, camPos });
+    // If this image is also registered as a 3D image-plane drawing, the lightbox
+    // gets a "show in place" toggle that projects it onto the model.
+    const planeId = IMAGE_PLANES.find(p => p.imageUrl === src)?.id;
+    setLbImg({ src, cap, camPos, planeId });
     if (camPos) window.dispatchEvent(new CustomEvent('cesium:image-cam', { detail: { ...camPos, id: Date.now() } }));
   }
   const timerRef              = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -215,14 +222,24 @@ export function ProjectPanel({ project, onClose }: Props) {
         </div>{/* end inner scrollable */}
       </div>{/* end outer shell */}
 
-      {lbImg && <ImageLightbox src={lbImg.src} caption={lbImg.cap} onClose={() => setLbImg(null)} />}
+      {lbImg && (
+        <ImageLightbox
+          src={lbImg.src} caption={lbImg.cap} onClose={() => setLbImg(null)}
+          planeId={lbImg.planeId}
+          shown={lbImg.planeId ? !!visiblePlanes[lbImg.planeId] : false}
+          onToggleInPlace={lbImg.planeId ? () => onTogglePlane(lbImg.planeId!) : undefined}
+        />
+      )}
     </>
   );
 }
 
 /* ── Image lightbox (red-framed, randomly positioned) ── */
 
-function ImageLightbox({ src, caption, onClose }: { src: string; caption: string; onClose: () => void }) {
+function ImageLightbox({ src, caption, onClose, planeId, shown, onToggleInPlace }: {
+  src: string; caption: string; onClose: () => void;
+  planeId?: string; shown?: boolean; onToggleInPlace?: () => void;
+}) {
   const [pos, setPos] = useState(() => {
     const w = 600;
     const pad = 30;
@@ -269,6 +286,17 @@ function ImageLightbox({ src, caption, onClose }: { src: string; caption: string
       >
         <img src={src} alt="" draggable={false}
              style={{ width: '100%', display: 'block', maxHeight: '55vh', objectFit: 'contain', cursor: 'default' }} />
+        {planeId && (
+          <button onClick={onToggleInPlace} style={{
+            display: 'block', width: '100%', padding: '7px 0',
+            background: shown ? RED : '#0a0a0a',
+            border: 'none', borderTop: `1px solid ${RED}`,
+            color: '#fff', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}>
+            {shown ? '✓ Showing in place on model' : 'Show in place on model'}
+          </button>
+        )}
         {caption && (
           <p style={{ margin: 0, padding: '4px 8px 5px', fontSize: 8, letterSpacing: '0.07em', color: 'rgba(255,255,255,0.38)' }}>
             {caption}

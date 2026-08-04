@@ -9,6 +9,12 @@
     <script>window.CESIUM_BASE_URL = 'https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/';</script>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+    <style>
+      @keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50%       { opacity: 0.4; transform: scale(0.75); }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
