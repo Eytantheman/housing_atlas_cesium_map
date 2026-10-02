@@ -14,20 +14,6 @@
     "description": ""
   },
   {
-    "id": 2,
-    "name": "Orteliusstraat 203–293, 200–290 / Jan van Galenstraat singles Oranjehof",
-    "lat": 52.371222,
-    "lng": 4.848611,
-    "city": "Amsterdam",
-    "architect": "Margaret Staal–Kropholler",
-    "era": "1921-1930",
-    "social_org": null,
-    "scale": null,
-    "note": null,
-    "bag_id": null,
-    "description": ""
-  },
-  {
     "id": 3,
     "name": "Housing for singles Oranjehof",
     "lat": 52.370861,
@@ -50,20 +36,6 @@
     "architect": "Will Jansen",
     "era": "1951-1960",
     "social_org": "singles",
-    "scale": null,
-    "note": null,
-    "bag_id": null,
-    "description": ""
-  },
-  {
-    "id": 5,
-    "name": "Touwslagersstraat 2–20",
-    "lat": 51.922278,
-    "lng": 4.505111,
-    "city": "Rotterdam",
-    "architect": "Jacoba Froukje, Joop Pot",
-    "era": "1941-1950",
-    "social_org": null,
     "scale": null,
     "note": null,
     "bag_id": null,
@@ -140,34 +112,6 @@
     "description": ""
   },
   {
-    "id": 11,
-    "name": "Pieter Vlamingstraat",
-    "lat": 52.365167,
-    "lng": 4.927056,
-    "city": "Amsterdam",
-    "architect": "Liesbeth van der Pol",
-    "era": "1991-2000",
-    "social_org": "singles, families",
-    "scale": null,
-    "note": null,
-    "bag_id": null,
-    "description": ""
-  },
-  {
-    "id": 12,
-    "name": "Willem Beukelsstraat, Ringdijk",
-    "lat": 52.353722,
-    "lng": 4.925722,
-    "city": "Amsterdam",
-    "architect": "Madeleine Steigenga",
-    "era": "1991-2000",
-    "social_org": null,
-    "scale": null,
-    "note": null,
-    "bag_id": null,
-    "description": ""
-  },
-  {
     "id": 13,
     "name": "Silodam",
     "lat": 52.392333,
@@ -219,20 +163,6 @@
     "era": "2001-2010",
     "social_org": null,
     "scale": null,
-    "note": null,
-    "bag_id": null,
-    "description": ""
-  },
-  {
-    "id": 17,
-    "name": "Het SchetsBlok",
-    "lat": 52.349611,
-    "lng": 4.844694,
-    "city": "Amsterdam",
-    "architect": "Jannie Vinke",
-    "era": "2011-2020",
-    "social_org": null,
-    "scale": "21-50",
     "note": null,
     "bag_id": null,
     "description": ""
