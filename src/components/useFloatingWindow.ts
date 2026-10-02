@@ -1,0 +1,126 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+
+/** Below this width floating windows become fixed bottom sheets (no drag). Matches App.css. */
+export const SHEET_BREAKPOINT = 1024;
+const MARGIN = 24;
+const EDGE = 16;
+const BAR_H = 36;
+
+const isSheetWidth = () => window.innerWidth < SHEET_BREAKPOINT;
+
+/** The visible map area (the `.map` element), falling back to the viewport. */
+function freeArea() {
+  const r = document.querySelector('.map')?.getBoundingClientRect();
+  if (r && r.width > 0 && r.height > 0) return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  return { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+}
+
+const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), Math.max(min, max));
+
+/**
+ * Placement + drag for the floating windows (image lightbox, video).
+ * - Width fits the free map area; height is measured after mount, so the window
+ *   is placed at a random spot that actually fits, then kept on screen as its
+ *   content (e.g. a late-loading image) changes size.
+ * - Dragging uses pointer events with pointer capture (mouse, pen and touch)
+ *   and is clamped to the viewport.
+ * - On narrow screens the window is a fixed full-width sheet instead.
+ * - Focus moves into the window on open and returns to the opener on close.
+ */
+export function useFloatingWindow(preferredW: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [sheet, setSheet] = useState(isSheetWidth);
+  const [pos, setPos] = useState(() => {
+    const a = freeArea();
+    const w = Math.round(Math.max(280, Math.min(preferredW, a.right - a.left - MARGIN * 2)));
+    const x = a.left + MARGIN + Math.random() * Math.max(0, a.right - a.left - w - MARGIN * 2);
+    return { x: Math.round(x), y: a.top + MARGIN, w, placed: false };
+  });
+  const drag = useRef<{ id: number; sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  // Track the sheet breakpoint
+  useEffect(() => {
+    const onResize = () => setSheet(isSheetWidth());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // First placement, once the real height is known
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || pos.placed) return;
+    const a = freeArea();
+    const h = el.offsetHeight;
+    const y = a.top + MARGIN + Math.random() * Math.max(0, a.bottom - a.top - h - MARGIN * 2);
+    setPos(p => ({ ...p, y: Math.round(clamp(y, EDGE, window.innerHeight - h - EDGE)), placed: true }));
+  }, [pos.placed]);
+
+  // Keep it on screen when its own size or the viewport changes
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const keepInView = () => {
+      if (drag.current) return;
+      const h = el.offsetHeight;
+      setPos(p => {
+        const x = clamp(p.x, 0, window.innerWidth - p.w);
+        const y = clamp(p.y, EDGE, window.innerHeight - h - EDGE);
+        return x === p.x && y === p.y ? p : { ...p, x, y };
+      });
+    };
+    const ro = new ResizeObserver(keepInView);
+    ro.observe(el);
+    window.addEventListener('resize', keepInView);
+    return () => { ro.disconnect(); window.removeEventListener('resize', keepInView); };
+  }, []);
+
+  // Focus in on open, back to the opener on close
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    // Next frame: the window is visibility:hidden until it has been placed
+    const raf = requestAnimationFrame(() => el?.focus({ preventScroll: true }));
+    return () => {
+      cancelAnimationFrame(raf);
+      if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
+    };
+  }, []);
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (sheet || e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('button, a, video, input')) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
+    setDragging(true);
+  }, [sheet, pos.x, pos.y]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    const x = clamp(d.ox + e.clientX - d.sx, 0, window.innerWidth - pos.w);
+    const y = clamp(d.oy + e.clientY - d.sy, 0, window.innerHeight - BAR_H);
+    setPos(p => ({ ...p, x, y }));
+  }, [pos.w]);
+
+  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    drag.current = null;
+    setDragging(false);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  }, []);
+
+  const style: React.CSSProperties = sheet
+    ? {}
+    : { left: pos.x, top: pos.y, width: pos.w, visibility: pos.placed ? 'visible' : 'hidden' };
+
+  return {
+    ref,
+    sheet,
+    dragging,
+    style,
+    handlers: { onPointerDown, onPointerMove, onPointerUp: endDrag, onPointerCancel: endDrag },
+  };
+}

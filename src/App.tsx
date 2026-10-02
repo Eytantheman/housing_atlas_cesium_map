@@ -3,15 +3,15 @@ import { CesiumViewer, type FlyTarget } from './components/CesiumViewer';
 import { ProjectPanel } from './components/ProjectPanel';
 import { PROJECT_CAMERAS } from './config/cameras';
 import { IMAGE_PLANES } from './config/image-planes';
+import { VIDEO_HOTSPOTS } from './config/video-hotspots';
+import { DEV_TOOLS } from './config/dev';
+import { PANEL_CONTENT } from './data/panel-content';
+import { useFloatingWindow } from './components/useFloatingWindow';
 import type { HousingProject } from './types';
 import allProjectsData from './data/housing-atlas.json';
+import './App.css';
 
 const ALL_PROJECTS = allProjectsData as HousingProject[];
-
-// Menu / toast UI uses only these three colors (plus opacity variations for hierarchy)
-const RED = '#e02020';
-const redA = (a: number) => `rgba(224, 32, 32, ${a})`;
-const whiteA = (a: number) => `rgba(255, 255, 255, ${a})`;
 
 function nearestNeighborSort(projects: HousingProject[]): HousingProject[] {
   const withCoords = projects.filter(p => p.lat != null && p.lng != null);
@@ -61,6 +61,10 @@ export default function App() {
   const loaderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const freezeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tileMaxRef = useRef(0);
+  const tileLastRef = useRef(0);
+  const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Phone layout only: the index collapses into a bottom drawer. Ignored on desktop.
+  const [indexOpen, setIndexOpen] = useState(false);
 
   const sortedList = useMemo(() => {
     const amsterdam = nearestNeighborSort(ALL_PROJECTS.filter(p => p.city === 'Amsterdam'));
@@ -68,6 +72,17 @@ export default function App() {
       .sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name));
     return [...amsterdam, ...others];
   }, []);
+
+  // Consecutive runs of the same city, for the index's city headings
+  const cityGroups = useMemo(() => {
+    const groups: { city: string; items: HousingProject[] }[] = [];
+    for (const p of sortedList) {
+      const last = groups[groups.length - 1];
+      if (last && last.city === p.city) last.items.push(p);
+      else groups.push({ city: p.city, items: [p] });
+    }
+    return groups;
+  }, [sortedList]);
 
   useEffect(() => {
     const h = (e: Event) => setBearing((e as CustomEvent<number>).detail);
@@ -78,10 +93,15 @@ export default function App() {
   useEffect(() => {
     const h = (e: Event) => {
       setCapture((e as CustomEvent).detail);
-      setTimeout(() => setCapture(null), 8000);
+      // A new capture restarts the 8s auto-dismiss instead of inheriting the old timer
+      if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
+      captureTimerRef.current = setTimeout(() => setCapture(null), 8000);
     };
     window.addEventListener('cesium:capture', h);
-    return () => window.removeEventListener('cesium:capture', h);
+    return () => {
+      window.removeEventListener('cesium:capture', h);
+      if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -108,10 +128,19 @@ export default function App() {
         setTilePct(pct);
         if (!loaderTimerRef.current)
           loaderTimerRef.current = setTimeout(() => setTileLoading(true), 500);
+        // "Stalled" means 8s without progress, not 8s since loading began:
+        // restart the timer whenever the queue shrinks.
+        const progressed = current < tileLastRef.current;
+        tileLastRef.current = current;
+        if (progressed) {
+          if (freezeTimerRef.current) { clearTimeout(freezeTimerRef.current); freezeTimerRef.current = null; }
+          setTileFrozen(false);
+        }
         if (!freezeTimerRef.current)
           freezeTimerRef.current = setTimeout(() => setTileFrozen(true), 8000);
       } else {
         tileMaxRef.current = 0;
+        tileLastRef.current = 0;
         setTilePct(100);
         if (loaderTimerRef.current) { clearTimeout(loaderTimerRef.current); loaderTimerRef.current = null; }
         if (freezeTimerRef.current) { clearTimeout(freezeTimerRef.current); freezeTimerRef.current = null; }
@@ -132,12 +161,23 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
+  // The intro also gives way as soon as the visitor touches the map
+  useEffect(() => {
+    if (!introVisible) return;
+    const h = (e: PointerEvent) => {
+      if ((e.target as Element | null)?.closest?.('.map__canvas')) setIntroVisible(false);
+    };
+    document.addEventListener('pointerdown', h);
+    return () => document.removeEventListener('pointerdown', h);
+  }, [introVisible]);
+
   function flyTo(p: HousingProject) {
     if (p.lat == null || p.lng == null) return;
     const cam = PROJECT_CAMERAS[p.id] ?? { height: 250, pitch: -25, heading: 0 };
     setFlyTarget({ lat: cam.lat ?? p.lat, lng: cam.lng ?? p.lng, ...cam, id: Date.now() });
     setSelected(p);
     setIntroVisible(false);
+    setIndexOpen(false);
   }
 
   function reloadTiles() {
@@ -160,11 +200,20 @@ export default function App() {
     setActivePlaneId(nowVisible ? id : null);
   }
 
-  const anyPlaneVisible = IMAGE_PLANES.some(p => visiblePlanes[p.id]);
-  const listRight = selected ? 396 : 16;
+  const visibleCount = IMAGE_PLANES.filter(p => visiblePlanes[p.id]).length;
+  const anyPlaneVisible = visibleCount > 0;
+  const allPlanesVisible = visibleCount === IMAGE_PLANES.length && visibleCount > 0;
+  const planesState = allPlanesVisible ? 'on' : anyPlaneVisible ? 'mixed' : 'off';
+  const showTileStatus = show3dTiles && (tileLoading || tileFrozen);
+
+  // Hide the drawing controls when the active drawing belongs to a different project than the open one
+  const activePlaneUrl = IMAGE_PLANES.find(p => p.id === activePlaneId)?.imageUrl;
+  const selectedContent = selected ? PANEL_CONTENT[selected.id] : undefined;
+  const activePlaneInOtherProject = !!selected && !!activePlaneUrl &&
+    ![...(selectedContent?.axos ?? []), ...(selectedContent?.thumbs ?? [])].some(i => i.src === activePlaneUrl);
 
   return (
-    <div style={{ position: 'relative', height: '100vh', width: '100vw', overflow: 'hidden', background: '#000' }}>
+    <div className={`atlas${selected ? ' has-selection' : ''}`}>
       <CesiumViewer
         tourProjects={[]}
         flyToTarget={flyTarget}
@@ -172,169 +221,195 @@ export default function App() {
         visiblePlanes={visiblePlanes}
         activePlaneId={activePlaneId}
         show3dTiles={show3dTiles}
+        controlsHidden={activePlaneInOtherProject}
       />
 
-      {/* Title — top left */}
-      <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 10, pointerEvents: 'none', userSelect: 'none' }}>
-        <div style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 28, fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.01em', color: '#fff', textTransform: 'uppercase', textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}>
-          Augmented Atlas
-        </div>
-        <div style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 12, fontWeight: 400, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', marginTop: 4 }}>
-          of Social Housing in the NL
-        </div>
-      </div>
+      <div className={`leftcol${introVisible ? '' : ' is-compact'}`}>
+      {/* Masthead — a wall label pinned to the top-left of the model */}
+      <header className="masthead">
+        <h1 className="masthead__title">Augmented Atlas</h1>
+        <p className="masthead__sub">of Social Housing in the NL</p>
 
-      {/* Intro text — hovers over the map on load, stretching to meet the project list */}
-      <div style={{
-        position: 'absolute', top: 78, left: 20, right: 296, zIndex: 9,
-        pointerEvents: 'none', userSelect: 'none',
-        opacity: introVisible ? 1 : 0,
-        transform: introVisible ? 'translateY(0)' : 'translateY(-8px)',
-        transition: 'opacity 1s ease, transform 1s ease',
-      }}>
-        <p style={{
-          fontFamily: 'Helvetica, Arial, sans-serif',
-          fontSize: 'clamp(16px, 2vw, 23px)', fontWeight: 300, lineHeight: 1.32,
-          color: '#fff', margin: '0 0 0.7em', textShadow: '0 2px 16px rgba(0,0,0,0.75)',
-        }}>
+        {showTileStatus && (
+          <div className="status" role="status" aria-live="polite">
+            {tileFrozen ? (
+              <>
+                <span className="status__label status__label--alert"><span className="dot" aria-hidden="true" />Tiles stalled</span>
+                <button className="status__action link link--under" onClick={reloadTiles}>Reload tiles</button>
+              </>
+            ) : (
+              <>
+                <span className="status__label">Loading tiles</span>
+                <span className="status__pct">{tilePct > 0 ? `${tilePct}%` : ''}</span>
+                <span className="status__bar" aria-hidden="true">
+                  <span style={{ transform: `scaleX(${tilePct / 100})` }} />
+                </span>
+              </>
+            )}
+          </div>
+        )}
+      </header>
+
+      {/* Intro — wall text that fades away after a while or on first selection */}
+      <section className={`intro${introVisible ? ' is-visible' : ''}`} aria-hidden={!introVisible} aria-label="Introduction">
+        <button className="link intro__close" onClick={() => setIntroVisible(false)} tabIndex={introVisible ? 0 : -1}>Close</button>
+        <p>
           Welcome to Augmented Atlas, a living archive of Dutch collective housing. This platform brings together research produced within the Housing Studies course (TU Delft 2024-2026) into a single interactive environment, where each case study can be explored in situ.
         </p>
-        <p style={{
-          fontFamily: 'Helvetica, Arial, sans-serif',
-          fontSize: 'clamp(16px, 2vw, 23px)', fontWeight: 300, lineHeight: 1.32,
-          color: '#fff', margin: '0 0 0.7em', textShadow: '0 2px 16px rgba(0,0,0,0.75)',
-        }}>
+        <p>
           The dynamic 3D map interface allows visitors to move between site and archival records.
         </p>
-        <p style={{
-          fontFamily: 'Helvetica, Arial, sans-serif',
-          fontSize: 'clamp(16px, 2vw, 23px)', fontWeight: 300, lineHeight: 1.32,
-          color: '#fff', margin: 0, textShadow: '0 2px 16px rgba(0,0,0,0.75)',
-        }}>
+        <p>
           Rather than presenting housing history as a fixed record, the Augmented Atlas is meant to treat the archive as an open, evolving structure, one shaped collectively by students, communities, and institutions including Nieuwe Institute, and offered here as both a research tool and a public exhibition space.
         </p>
+      </section>
       </div>
 
-      {/* Footer credit — bottom left */}
-      <div style={{
-        position: 'absolute', bottom: 12, left: 20, zIndex: 10,
-        pointerEvents: 'none', userSelect: 'none',
-        fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-        fontSize: 11, fontWeight: 400, letterSpacing: '0.04em',
-        color: 'rgba(255,255,255,0.45)', textShadow: '0 1px 6px rgba(0,0,0,0.7)',
-      }}>
-        Research and design: Architecture Archives of Future, TU Delft 2026
-      </div>
+      {/* Persistent project index */}
+      <nav className={`index${indexOpen ? ' is-open' : ''}`} aria-label="Housing projects">
+        <div className="index__head">
+          <button
+            className="index__toggle"
+            onClick={() => { setIndexOpen(v => !v); setIntroVisible(false); }}
+            aria-expanded={indexOpen}
+            aria-controls="index-list"
+          >
+            <span className="index__label">Index</span>
+            <span className="index__count">{String(ALL_PROJECTS.length).padStart(2, '0')}</span>
+            <span className="index__chev" aria-hidden="true" />
+          </button>
+          <div className="index__label index__label--desk">
+            Index <span className="index__count">{String(ALL_PROJECTS.length).padStart(2, '0')}</span>
+          </div>
 
-      {/* Persistent project list */}
-      <div style={{
-        position: 'absolute', top: 16, right: listRight,
-        transition: 'right 0.38s cubic-bezier(0.4,0,0.2,1)',
-        zIndex: 10, width: 260, maxHeight: 'calc(100vh - 32px)',
-        display: 'flex', flexDirection: 'column',
-        background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(12px)',
-        border: `1px solid ${redA(0.3)}`, borderRadius: 12,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)', overflow: 'hidden',
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${redA(0.2)}`, flexShrink: 0 }}>
-          <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>Projects ({ALL_PROJECTS.length})</span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={() => setShow3dTiles(v => !v)} title={show3dTiles ? 'Switch to 2D satellite' : 'Switch to 3D tiles'} style={{ ...glassBtn, width: 36, height: 28, padding: 0, borderRadius: 6, fontSize: 10, fontWeight: 700, letterSpacing: '0.03em', color: show3dTiles ? RED : whiteA(0.4) }}>
-              {show3dTiles ? '3D' : '2D'}
+          <div className="tools" role="toolbar" aria-label="Map controls">
+            <button
+              className="tool tool--mode"
+              onClick={() => setShow3dTiles(v => !v)}
+              title={show3dTiles ? 'Switch to 2D satellite' : 'Switch to 3D tiles'}
+              aria-label={show3dTiles ? 'Switch to 2D satellite' : 'Switch to 3D tiles'}
+            >
+              <span className={show3dTiles ? 'is-on' : ''}>3D</span>
+              <span className="tool__slash">/</span>
+              <span className={!show3dTiles ? 'is-on' : ''}>2D</span>
             </button>
-            <button onClick={() => {
-              const next = !anyPlaneVisible;
-              setVisiblePlanes(Object.fromEntries(IMAGE_PLANES.map(p => [p.id, next])));
-              if (!next) setActivePlaneId(null);
-            }} title="Toggle drawings" style={{ ...glassBtn, width: 28, height: 28, padding: 0, borderRadius: 6, fontSize: 12, color: anyPlaneVisible ? RED : whiteA(0.4) }}>
-              ⬜
+            <button
+              className={`tool tool--planes is-${planesState}`}
+              onClick={() => {
+                // All shown -> hide all; none or some shown -> show all
+                const next = !allPlanesVisible;
+                setVisiblePlanes(Object.fromEntries(IMAGE_PLANES.map(p => [p.id, next])));
+                if (!next) setActivePlaneId(null);
+              }}
+              title={allPlanesVisible ? 'Hide all drawings' : 'Show all drawings'}
+              aria-pressed={planesState === 'mixed' ? 'mixed' : allPlanesVisible}
+            >
+              <span className="tool__mark" aria-hidden="true" />
+              Drawings
             </button>
-            <button onClick={resetNorth} title="Reset to north" style={{ ...glassBtn, width: 28, height: 28, padding: 0, borderRadius: 6, fontSize: 14 }}>
-              <span style={{ display: 'inline-block', transform: `rotate(${-bearing}deg)`, transition: 'transform 0.15s', color: bearing === 0 ? RED : whiteA(0.5) }}>↑</span>
+            <button
+              className={`tool tool--north${Math.round(bearing) % 360 === 0 ? ' is-north' : ''}`}
+              onClick={resetNorth}
+              title="Reset to north"
+              aria-label="Reset view to north"
+            >
+              <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true"
+                   style={{ transform: `rotate(${-bearing}deg)` }}>
+                <path d="M5 1 L5 13 M1.5 4.5 L5 1 L8.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+              </svg>
+              N
             </button>
           </div>
         </div>
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {sortedList.map((p, i) => (
-            <button key={p.id} onClick={() => flyTo(p)}
-              style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '9px 14px', background: selected?.id === p.id ? redA(0.18) : 'none', border: 'none', borderTop: i ? `1px solid ${redA(0.12)}` : 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
-              onMouseEnter={e => { if (selected?.id !== p.id) e.currentTarget.style.background = whiteA(0.07); }}
-              onMouseLeave={e => { e.currentTarget.style.background = selected?.id === p.id ? redA(0.18) : 'none'; }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#fff', textTransform: 'uppercase' }}>{p.name}</span>
-              <span style={{ fontSize: 11, color: whiteA(0.4) }}>{p.city}</span>
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {show3dTiles && (tileLoading || tileFrozen) && (
-        <div style={{ position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)', zIndex: 20, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(8px)', border: `1px solid ${redA(0.3)}`, borderRadius: 20, padding: '6px 14px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)', pointerEvents: tileFrozen ? 'auto' : 'none' }}>
-          {tileFrozen ? (
-            <button onClick={reloadTiles} style={{ background: 'none', border: 'none', color: RED, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0 }}>
-              <span style={{ fontSize: 16 }}>↺</span> Reload tiles
-            </button>
+        <div className="index__body" id="index-list">
+          {cityGroups.length === 0 ? (
+            <p className="empty">No projects in the atlas yet.</p>
           ) : (
-            <>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: RED, display: 'inline-block', animation: 'pulse 1.2s ease-in-out infinite' }} />
-              <span style={{ color: whiteA(0.6), fontSize: 12 }}>Loading tiles…</span>
-              <span style={{ color: '#fff', fontSize: 12, fontWeight: 600, minWidth: 32, textAlign: 'right' }}>{tilePct}%</span>
-            </>
+            <ol className="index__list">
+              {cityGroups.map(g => (
+                <li key={g.city + g.items[0].id} className="index__group">
+                  <h2 className="index__city">
+                    <span>{g.city}</span>
+                    <span>{String(g.items.length).padStart(2, '0')}</span>
+                  </h2>
+                  <ul>
+                    {g.items.map(p => (
+                      <li key={p.id}>
+                        <button
+                          className={`index__item${selected?.id === p.id ? ' is-active' : ''}`}
+                          onClick={() => flyTo(p)}
+                          aria-current={selected?.id === p.id ? 'true' : undefined}
+                        >
+                          <span className="index__name">{p.name}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ol>
           )}
+
+          {/* Footer credit */}
+          <footer className="credit">
+            Research and design: Architecture Archives of Future, TU Delft 2026
+          </footer>
         </div>
-      )}
+      </nav>
 
       <ProjectPanel project={selected} onClose={() => setSelected(null)} visiblePlanes={visiblePlanes} onTogglePlane={togglePlaneVisible} />
 
-      {videoSrc && <VideoOverlay videoSrc={videoSrc} onClose={() => setVideoSrc(null)} />}
+      {videoSrc && <VideoOverlay key={videoSrc} videoSrc={videoSrc} onClose={() => setVideoSrc(null)} />}
 
-      {capture && <CameraToast capture={capture} defaultId={selected?.id ?? null} projects={ALL_PROJECTS} onDismiss={() => setCapture(null)} />}
+      {DEV_TOOLS && capture && <CameraToast capture={capture} defaultId={selected?.id ?? null} projects={ALL_PROJECTS} onDismiss={() => setCapture(null)} />}
     </div>
   );
 }
 
 function VideoOverlay({ videoSrc, onClose }: { videoSrc: string; onClose: () => void }) {
-  const [pos] = useState(() => {
-    const w = Math.min(window.innerWidth * 0.41, 550);
-    const h = w * (9 / 16);
-    const pad = 30; // clears the X button overhang
-    const x = pad + Math.random() * (window.innerWidth  - w - pad * 2);
-    const y = pad + Math.random() * (window.innerHeight - h - pad * 2);
-    return { x: Math.round(x), y: Math.round(y), w: Math.round(w) };
-  });
+  // Same frame, placement, drag and phone-sheet behaviour as the image lightbox
+  const { ref: winRef, sheet: winSheet, dragging: winDragging, style: winStyle, handlers: winHandlers } = useFloatingWindow(Math.min(window.innerWidth * 0.41, 550));
+  const hotspot = VIDEO_HOTSPOTS.find(h => h.videoSrc === videoSrc);
+  const title = hotspot
+    ? hotspot.id.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+    : 'Video';
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose]);
 
   return (
-    <div style={{ position: 'absolute', inset: 0, zIndex: 200, pointerEvents: 'none' }}>
-      <div
-        style={{
-          position: 'absolute',
-          left: pos.x, top: pos.y, width: pos.w,
-          aspectRatio: '16/9',
-          border: '3px solid #e02020',
-          boxShadow: '0 0 0 1px rgba(224,32,32,0.25), 0 0 40px rgba(224,32,32,0.2)',
-          background: '#000',
-          pointerEvents: 'auto',
-        }}
+    <div className="lb-layer">
+      <figure
+        ref={winRef}
+        className={`float lb video${winSheet ? ' is-sheet' : ''}${winDragging ? ' is-dragging' : ''}`}
+        {...winHandlers}
+        style={winStyle}
+        role="dialog"
+        aria-label={`Video: ${title}`}
+        tabIndex={-1}
       >
-        <video
-          src={videoSrc}
-          autoPlay
-          controls
-          style={{ width: '100%', height: '100%', display: 'block' }}
-        />
-        <button
-          onClick={onClose}
-          style={{
-            position: 'absolute', top: -18, right: -18,
-            width: 36, height: 36,
-            background: '#e02020', border: '2px solid rgba(255,255,255,0.2)',
-            borderRadius: '50%', color: '#fff',
-            fontSize: 17, fontWeight: 700, lineHeight: 1,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.6)',
-          }}
-        >✕</button>
-      </div>
+        <div className="float__bar lb__bar">
+          {winSheet ? (
+            <span className="float__meta">Video</span>
+          ) : (
+            <span className="float__meta lb__grip" aria-hidden="true">
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor"><rect x="0" y="0" width="10" height="1"/><rect x="0" y="5" width="10" height="1"/></svg>
+              Drag
+            </span>
+          )}
+          <span className="float__actions">
+            <button className="link" onClick={onClose}>Close</button>
+          </span>
+        </div>
+        <video src={videoSrc} autoPlay controls playsInline className="video__el" />
+        <figcaption className="lb__cap">
+          <span className="dot" aria-hidden="true" />Video&ensp;{title}
+        </figcaption>
+      </figure>
     </div>
   );
 }
@@ -350,30 +425,26 @@ function CameraToast({ capture, defaultId, projects, onDismiss }: {
   const assignedProject = projects.find(p => p.id === Number(assignedId));
 
   return (
-    <div style={{ position: 'absolute', bottom: 24, right: 16, zIndex: 50, background: 'rgba(0,0,0,0.93)', border: `1px solid ${RED}`, borderRadius: 10, padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, color: '#fff', width: 340, boxShadow: '0 4px 20px rgba(0,0,0,0.6)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ color: RED, fontWeight: 700 }}>Camera captured</span>
-        <button onClick={onDismiss} style={{ background: 'none', border: 'none', color: whiteA(0.4), cursor: 'pointer', fontSize: 14, padding: 0 }}>✕</button>
+    <div className="devcard toast" role="status">
+      <div className="devcard__head">
+        <span className="devcard__title"><span className="dot" aria-hidden="true" />Camera captured</span>
+        <button className="link" onClick={onDismiss}>Dismiss</button>
       </div>
-      <div style={{ color: whiteA(0.5), fontSize: 10, marginBottom: 10 }}>
+      <div className="devcard__meta">
         h={capture.height}m · pitch={capture.pitch}° · heading={capture.heading}°
       </div>
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 10, color: whiteA(0.4), marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assign to project</div>
-        <select value={assignedId} onChange={e => setAssignedId(e.target.value)}
-          style={{ width: '100%', background: 'rgba(0,0,0,0.6)', border: `1px solid ${redA(0.35)}`, borderRadius: 6, color: '#fff', fontSize: 12, padding: '5px 8px', outline: 'none', cursor: 'pointer' }}>
+      <label className="devcard__field">
+        <span className="devcard__label">Assign to project</span>
+        <select value={assignedId} onChange={e => setAssignedId(e.target.value)} className="devcard__select">
           <option value="">— pick a project —</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.id}. {p.name}</option>)}
         </select>
-        {assignedProject && <div style={{ fontSize: 10, color: whiteA(0.4), marginTop: 4 }}>{assignedProject.city}</div>}
-      </div>
-      <div style={{ background: whiteA(0.06), borderRadius: 6, padding: '7px 10px', lineHeight: 1.6, whiteSpace: 'pre', fontSize: 11, color: whiteA(0.85) }}>{snippet}</div>
-      <button onClick={() => navigator.clipboard.writeText(snippet)}
-        style={{ marginTop: 8, background: RED, border: 'none', borderRadius: 6, color: '#fff', fontSize: 11, fontWeight: 700, padding: '5px 12px', cursor: 'pointer', width: '100%', fontFamily: 'monospace' }}>
+        {assignedProject && <span className="devcard__meta">{assignedProject.city}</span>}
+      </label>
+      <pre className="devcard__code">{snippet}</pre>
+      <button className="devcard__btn" onClick={() => navigator.clipboard.writeText(snippet)}>
         Copy to clipboard
       </button>
     </div>
   );
 }
-
-const glassBtn: React.CSSProperties = { padding: '0 16px', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', border: `1px solid ${redA(0.35)}`, borderRadius: 8, cursor: 'pointer', color: '#fff', fontSize: 13, boxShadow: '0 2px 8px rgba(0,0,0,0.3)', height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' };

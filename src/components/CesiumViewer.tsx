@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import type { HousingProject } from '../types';
 import { IMAGE_PLANES, type ImagePlane } from '../config/image-planes';
 import { VIDEO_HOTSPOTS } from '../config/video-hotspots';
+import { DEV_TOOLS } from '../config/dev';
 
 // Cesium is loaded via CDN script tag — access the global
 declare const Cesium: typeof import('cesium');
 
-const ACCENT = '#e02020'; // red — menus/tooltips use only black + white + this
-const redA = (a: number) => `rgba(224, 32, 32, ${a})`;
-const whiteA = (a: number) => `rgba(255, 255, 255, ${a})`;
+// Signal orange — the single accent from DESIGN.md (also used for in-scene hotspots)
+const ACCENT = '#FF4F00';
+const accentColor = () => Cesium.Color.fromCssColorString(ACCENT);
+// Backdrop behind the tiles (visible above the horizon on tilted views):
+// a neutral studio grey instead of black, so it reads as "model", not "failure".
+const BACKDROP = '#D9D8D3';
 
 export interface FlyTarget {
   lat: number;
@@ -26,10 +30,14 @@ interface Props {
   visiblePlanes: Record<string, boolean>;
   activePlaneId: string | null;
   show3dTiles: boolean;
+  /** Presentation only: hide the drawing controls (e.g. the active drawing belongs to another project). */
+  controlsHidden?: boolean;
 }
 
-export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visiblePlanes, activePlaneId, show3dTiles }: Props) {
+export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visiblePlanes, activePlaneId, show3dTiles, controlsHidden = false }: Props) {
   const containerRef       = useRef<HTMLDivElement>(null);
+  const creditsRef         = useRef<HTMLDivElement>(null);
+  const prevShow3dRef      = useRef(show3dTiles);
   const viewerRef          = useRef<any>(null);
   const tilesetRef         = useRef<any>(null);
   const tourPolyRef        = useRef<any>(null);
@@ -226,13 +234,14 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
       sceneModePicker:      false,
       selectionIndicator:   false,
       timeline:             false,
-      creditContainer:      document.createElement('div'),
+      // Visible attribution (required for Google Photorealistic 3D Tiles)
+      creditContainer:      creditsRef.current ?? document.createElement('div'),
       // @ts-expect-error: imageryProvider:false disables the default imagery layer
       imageryProvider:      false,
     });
 
     viewer.scene.skyBox.show          = false;
-    viewer.scene.backgroundColor      = Cesium.Color.BLACK;
+    viewer.scene.backgroundColor      = Cesium.Color.fromCssColorString(BACKDROP);
     viewer.scene.globe.show           = false;
     viewer.scene.fog.enabled          = false;
     viewer.scene.skyAtmosphere.show   = false;
@@ -345,28 +354,9 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
         plane: {
           plane: new Cesium.Plane(Cesium.Cartesian3.UNIT_Y, 0),
           dimensions: new Cesium.Cartesian2(h.widthM, h.heightM),
-          material: Cesium.Color.RED.withAlpha(0.12),
+          material: accentColor().withAlpha(0.12),
           outline: true,
-          outlineColor: Cesium.Color.RED,
-        },
-      });
-
-      // Perpendicular line from frame center, 10 m in the facing direction
-      const transform = Cesium.Transforms.headingPitchRollToFixedFrame(pos, hpr);
-      const fwd = Cesium.Matrix4.multiplyByPointAsVector(
-        transform, new Cesium.Cartesian3(0, 1, 0), new Cesium.Cartesian3()
-      );
-      const lineEnd = Cesium.Cartesian3.add(
-        pos,
-        Cesium.Cartesian3.multiplyByScalar(fwd, 200, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3()
-      );
-      viewer.entities.add({
-        polyline: {
-          positions: [pos, lineEnd],
-          width: 2,
-          material: Cesium.Color.RED,
-          arcType: Cesium.ArcType.NONE,
+          outlineColor: accentColor(),
         },
       });
     }
@@ -379,6 +369,8 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
       emitTilesLoading(true);
       Cesium.Cesium3DTileset.fromIonAssetId(2275207, { showCreditsOnScreen: true })
         .then((tileset: any) => {
+          // StrictMode mounts twice in dev; the first viewer may be gone already
+          if (viewer.isDestroyed()) return;
           if (tilesetRef.current) viewer.scene.primitives.remove(tilesetRef.current);
           tilesetRef.current = tileset;
           tileset.show = show3dTilesRef.current;
@@ -423,7 +415,10 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
 
     // ── Camera capture (press C) ──────────────────────────────────────────
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!DEV_TOOLS) return;
       if (e.key !== 'c' && e.key !== 'C') return;
+      // Don't capture while typing in a field
+      if ((e.target as HTMLElement | null)?.closest?.('input, select, textarea')) return;
       const cam = viewer.camera;
       const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(cam.positionWC);
       const result = {
@@ -493,12 +488,12 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
       if (newId === hoveredVideoId) return;
 
       if (hoveredVideoId && videoEntities[hoveredVideoId]) {
-        videoEntities[hoveredVideoId].plane.material = Cesium.Color.RED.withAlpha(0.12);
+        videoEntities[hoveredVideoId].plane.material = accentColor().withAlpha(0.12);
       }
       hoveredVideoId = newId;
       viewer.scene.canvas.style.cursor = newId ? 'pointer' : '';
       if (newId && videoEntities[newId]) {
-        videoEntities[newId].plane.material = Cesium.Color.RED.withAlpha(0.4);
+        videoEntities[newId].plane.material = accentColor().withAlpha(0.4);
       }
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
@@ -574,6 +569,11 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer) return;
+    // Only act on an actual 3D <-> 2D switch. On mount the camera is still
+    // Cesium's default (North America), and saving it here made the first
+    // switch to 2D jump to that globe view.
+    if (prevShow3dRef.current === show3dTiles) return;
+    prevShow3dRef.current = show3dTiles;
     if (show3dTiles) {
       // Save 2D camera state before leaving satellite mode
       const cam2d = viewer.camera;
@@ -656,36 +656,27 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
   // Corner controls (edit button + sliders) only appear once a drawing has
   // been switched on from the "show in place" toggle in the lightbox — they
   // live outside the deep-edit HUD, not gated by planeEditOn.
-  const activePlaneShown = !!activePlaneId && !!visiblePlanes[activePlaneId];
+  const activePlaneShown = !!activePlaneId && !!visiblePlanes[activePlaneId] && !controlsHidden;
 
   return (
-    <>
-      <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
+    <div className="map">
+      <div ref={containerRef} className="map__canvas" />
+      <div ref={creditsRef} className="map__credits" aria-label="Map data attribution" />
 
       {activePlaneShown && (
-        <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 15, display: 'flex', alignItems: 'flex-end', gap: 10 }}>
-          <button
+        <div className="drawing-ctrl">
+          {DEV_TOOLS && <button
             onClick={() => window.dispatchEvent(new CustomEvent('cesium:edit-planes-toggle'))}
             title="Toggle drawing-alignment editor"
-            style={{
-              padding: '7px 14px', borderRadius: 8,
-              background: planeEditOn ? ACCENT : 'rgba(0,0,0,0.85)',
-              backdropFilter: 'blur(8px)',
-              border: `1px solid ${ACCENT}`, color: '#fff',
-              fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-            }}
+            aria-pressed={planeEditOn}
+            className={`drawing-ctrl__edit${planeEditOn ? ' is-on' : ''}`}
           >
-            {planeEditOn ? '✥ Editing drawing' : '✥ Edit drawing'}
-          </button>
+            <span className="tool__mark" aria-hidden="true" />
+            {planeEditOn ? 'Editing drawing' : 'Edit drawing'}
+          </button>}
 
           {planeEditVals && (
-            <div style={{
-              display: 'flex', gap: 16,
-              background: 'rgba(0,0,0,0.85)', border: `1px solid ${redA(0.45)}`,
-              borderRadius: 8, padding: '8px 14px 6px',
-              backdropFilter: 'blur(8px)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-            }}>
+            <div className="drawing-ctrl__sliders">
               <SliderControl
                 label="Height" value={planeEditVals.height} unit="m"
                 min={0} max={150} step={0.5} decimals={1}
@@ -701,138 +692,108 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
         </div>
       )}
 
-      {activePlaneShown && planeEditOn && planeEditVals && (
-        <div style={{
-          position: 'absolute', bottom: 60, left: 16, zIndex: 15,
-          background: 'rgba(0,0,0,0.93)', border: `1px solid ${redA(0.6)}`,
-          borderRadius: 10, padding: '12px 14px', width: 250,
-          fontFamily: 'monospace', fontSize: 11, color: '#fff',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
-        }}>
-          <div style={{ color: ACCENT, fontWeight: 700, marginBottom: 6, fontSize: 12 }}>
-            {planeEditVals.id} ({planeEditIdx + 1}/{IMAGE_PLANES.length})
+      {DEV_TOOLS && activePlaneShown && planeEditOn && planeEditVals && (
+        <div className="devcard plane-hud" role="region" aria-label="Drawing alignment editor">
+          <div className="devcard__head">
+            <span className="devcard__title"><span className="dot" aria-hidden="true" />{planeEditVals.id}</span>
+            <span className="devcard__meta">{planeEditIdx + 1}/{IMAGE_PLANES.length}</span>
           </div>
-          <div style={{ lineHeight: 1.7, color: whiteA(0.85) }}>
-            lat&nbsp;&nbsp;&nbsp;{planeEditVals.lat.toFixed(6)}<br />
-            lng&nbsp;&nbsp;&nbsp;{planeEditVals.lng.toFixed(6)}<br />
-            height&nbsp;{planeEditVals.height.toFixed(1)} m<br />
-            head&nbsp;&nbsp;&nbsp;{planeEditVals.heading.toFixed(1)}°<br />
-            tilt&nbsp;&nbsp;&nbsp;{(planeEditVals.pitch ?? 0).toFixed(1)}°<br />
-            roll&nbsp;&nbsp;&nbsp;{(planeEditVals.roll ?? 0).toFixed(1)}°<br />
-            size&nbsp;&nbsp;&nbsp;{planeEditVals.widthM.toFixed(1)} × {planeEditVals.heightM.toFixed(1)} m<br />
-            opacity&nbsp;{Math.round((planeEditVals.opacity ?? 1) * 100)}%
-          </div>
+          <dl className="plane-hud__vals">
+            <dt>lat</dt><dd>{planeEditVals.lat.toFixed(6)}</dd>
+            <dt>lng</dt><dd>{planeEditVals.lng.toFixed(6)}</dd>
+            <dt>height</dt><dd>{planeEditVals.height.toFixed(1)} m</dd>
+            <dt>head</dt><dd>{planeEditVals.heading.toFixed(1)}°</dd>
+            <dt>tilt</dt><dd>{(planeEditVals.pitch ?? 0).toFixed(1)}°</dd>
+            <dt>roll</dt><dd>{(planeEditVals.roll ?? 0).toFixed(1)}°</dd>
+            <dt>size</dt><dd>{planeEditVals.widthM.toFixed(1)} × {planeEditVals.heightM.toFixed(1)} m</dd>
+            <dt>opacity</dt><dd>{Math.round((planeEditVals.opacity ?? 1) * 100)}%</dd>
+          </dl>
 
-          <div style={{ display: 'flex', gap: 14, margin: '10px 0 4px', alignItems: 'flex-start' }}>
+          <div className="plane-hud__pads">
             {/* Move D-pad */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 22px)', gridTemplateRows: 'repeat(3, 22px)', gap: 2 }}>
+            <div className="plane-hud__dpad">
               <div />
               <CtrlBtn label="↑" title="Move north" onClick={() => nudgePlane('up')} />
               <div />
               <CtrlBtn label="←" title="Move west" onClick={() => nudgePlane('left')} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, color: whiteA(0.4) }}>move</div>
+              <div className="plane-hud__dpad-label">move</div>
               <CtrlBtn label="→" title="Move east" onClick={() => nudgePlane('right')} />
               <div />
               <CtrlBtn label="↓" title="Move south" onClick={() => nudgePlane('down')} />
               <div />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div>
-                <div style={{ fontSize: 8, color: whiteA(0.4), marginBottom: 2 }}>rotate</div>
-                <div style={{ display: 'flex', gap: 2 }}>
-                  <CtrlBtn label="↺" title="Rotate CCW" onClick={() => nudgePlane('rotateCCW')} />
-                  <CtrlBtn label="↻" title="Rotate CW" onClick={() => nudgePlane('rotateCW')} />
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 8, color: whiteA(0.4), marginBottom: 2 }}>tilt</div>
-                <div style={{ display: 'flex', gap: 2 }}>
-                  <CtrlBtn label="⤴" title="Tilt up" onClick={() => nudgePlane('tiltUp')} />
-                  <CtrlBtn label="⤵" title="Tilt down" onClick={() => nudgePlane('tiltDown')} />
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 8, color: whiteA(0.4), marginBottom: 2 }}>roll</div>
-                <div style={{ display: 'flex', gap: 2 }}>
-                  <CtrlBtn label="⟲" title="Roll CCW" onClick={() => nudgePlane('rollCCW')} />
-                  <CtrlBtn label="⟳" title="Roll CW" onClick={() => nudgePlane('rollCW')} />
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 8, color: whiteA(0.4), marginBottom: 2 }}>scale</div>
-                <div style={{ display: 'flex', gap: 2 }}>
-                  <CtrlBtn label="−" title="Scale down" onClick={() => nudgePlane('scaleDown')} />
-                  <CtrlBtn label="+" title="Scale up" onClick={() => nudgePlane('scaleUp')} />
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 8, color: whiteA(0.4), marginBottom: 2 }}>height</div>
-                <div style={{ display: 'flex', gap: 2 }}>
-                  <CtrlBtn label="▼" title="Lower" onClick={() => nudgePlane('heightDown')} />
-                  <CtrlBtn label="▲" title="Raise" onClick={() => nudgePlane('heightUp')} />
-                </div>
-              </div>
+            <div className="plane-hud__pairs">
+              <CtrlPair label="rotate">
+                <CtrlBtn label="↺" title="Rotate CCW" onClick={() => nudgePlane('rotateCCW')} />
+                <CtrlBtn label="↻" title="Rotate CW" onClick={() => nudgePlane('rotateCW')} />
+              </CtrlPair>
+              <CtrlPair label="tilt">
+                <CtrlBtn label="⤴" title="Tilt up" onClick={() => nudgePlane('tiltUp')} />
+                <CtrlBtn label="⤵" title="Tilt down" onClick={() => nudgePlane('tiltDown')} />
+              </CtrlPair>
+              <CtrlPair label="roll">
+                <CtrlBtn label="⟲" title="Roll CCW" onClick={() => nudgePlane('rollCCW')} />
+                <CtrlBtn label="⟳" title="Roll CW" onClick={() => nudgePlane('rollCW')} />
+              </CtrlPair>
+              <CtrlPair label="scale">
+                <CtrlBtn label="−" title="Scale down" onClick={() => nudgePlane('scaleDown')} />
+                <CtrlBtn label="+" title="Scale up" onClick={() => nudgePlane('scaleUp')} />
+              </CtrlPair>
+              <CtrlPair label="height">
+                <CtrlBtn label="▼" title="Lower" onClick={() => nudgePlane('heightDown')} />
+                <CtrlBtn label="▲" title="Raise" onClick={() => nudgePlane('heightUp')} />
+              </CtrlPair>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 8px' }}>
-            <span style={{ color: whiteA(0.55), fontSize: 10 }}>
+          <div className="plane-hud__step">
+            <span>
               step ×{STEP_LEVELS[stepMultIdx]} ({(0.5 * STEP_LEVELS[stepMultIdx]).toFixed(1)}m/click)
             </span>
             <CtrlBtn label="−" title="Smaller step" onClick={() => bumpStepMult(-1)} />
             <CtrlBtn label="+" title="Bigger step" onClick={() => bumpStepMult(1)} />
           </div>
 
-          <div style={{ margin: '0 0 8px', color: whiteA(0.4), fontSize: 9.5, lineHeight: 1.6 }}>
+          <p className="plane-hud__help">
             Click buttons above, or use keyboard:<br />
             ↑↓←→ move · Q/E rotate · W/S tilt · A/D roll<br />
             , / . scale · [ ] height<br />
             +/− step size · Shift = ×10 · Tab = switch · Esc = exit
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          </p>
+          <div className="plane-hud__actions">
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('cesium:edit-planes-recenter'))}
               title="Fly the camera back to this drawing"
-              style={{
-                flex: 1, padding: '6px 0', background: 'rgba(0,0,0,0.6)',
-                border: `1px solid ${whiteA(0.3)}`, borderRadius: 6,
-                color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-              }}
+              className="devcard__btn devcard__btn--ghost"
             >
               Recenter camera
             </button>
-            <button
-              onClick={logActivePlanePosition}
-              style={{
-                flex: 1, padding: '6px 0', background: ACCENT, border: 'none',
-                borderRadius: 6, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-              }}
-            >
+            <button onClick={logActivePlanePosition} className="devcard__btn">
               Log position
             </button>
           </div>
           {planeLogMsg && (
-            <div style={{ marginTop: 6, color: ACCENT, fontSize: 10 }}>{planeLogMsg}</div>
+            <div className="devcard__meta plane-hud__msg" role="status">{planeLogMsg}</div>
           )}
         </div>
       )}
-    </>
+    </div>
+  );
+}
+
+function CtrlPair({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="plane-hud__pair">
+      <div className="plane-hud__pair-label">{label}</div>
+      <div className="plane-hud__pair-btns">{children}</div>
+    </div>
   );
 }
 
 function CtrlBtn({ label, title, onClick }: { label: string; title: string; onClick: (e: React.MouseEvent) => void }) {
   return (
-    <button
-      title={title}
-      onClick={onClick}
-      style={{
-        width: 22, height: 22, background: 'rgba(0,0,0,0.6)',
-        border: `1px solid ${whiteA(0.3)}`, borderRadius: 5,
-        color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-        lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-      }}
-    >
+    <button title={title} aria-label={title} onClick={onClick} className="ctrl-btn">
       {label}
     </button>
   );
@@ -844,17 +805,16 @@ function SliderControl({ label, value, unit, min, max, step, decimals, onChange 
   onChange: (v: number) => void;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 108 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: ACCENT, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+    <label className="slider">
+      <span className="slider__head">
         <span>{label}</span>
-        <span style={{ color: whiteA(0.7) }}>{value.toFixed(decimals)}{unit}</span>
-      </div>
+        <span className="slider__val">{value.toFixed(decimals)}{unit}</span>
+      </span>
       <input
         type="range" className="edit-slider"
         min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
       />
-    </div>
+    </label>
   );
 }
-
