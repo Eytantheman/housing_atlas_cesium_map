@@ -566,6 +566,28 @@ a.link:hover::after,
 
 /* Archive */
 .archive { padding: var(--s-40) var(--s-24) 0; }
+.scans { padding: var(--s-40) var(--s-24) 0; }
+.scan-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  font-size: var(--fs-14);
+  text-align: left;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.scan-row + .scan-row { border-top: 0; }
+.scan-row:hover { background: var(--ink); color: var(--paper); }
+.scan-row__title { flex: 1; }
+.scan-row__go {
+  font-family: var(--mono);
+  font-size: var(--fs-cap);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .section-head {
   display: flex;
   justify-content: space-between;
@@ -754,6 +776,11 @@ img.img-ready   { opacity: 1; }
   touch-action: auto;
 }
 .float.is-sheet .lb__img { max-height: 60dvh; }
+.float.is-sheet .float__bar { height: 44px; }
+.float.is-sheet .float__actions { gap: 0; }
+.float.is-sheet .float__actions > .link { min-height: 44px; padding: 0 10px; }
+.float.is-sheet .float__actions > .link::after { left: 10px; right: 10px; bottom: 11px; }
+.float.is-sheet .float__actions > .link:last-child { margin-right: -10px; }
 
 .lb-full {
   position: fixed;
@@ -794,6 +821,70 @@ img.img-ready   { opacity: 1; }
   aspect-ratio: 16 / 9;
   background: var(--ink);
 }
+
+.splat__frame {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: #1a1a1a; /* the scene's own backdrop, so the frame doesn't flash on load */
+}
+.splat__el {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.lb.is-dragging .splat__el { pointer-events: none; } /* keep the drag when the pointer crosses the scene */
+
+/* Loading: the wall label's status line (mono label, %, 1px accent progress rule) on a paper slip */
+.splat__loading {
+  position: absolute;
+  left: var(--s-16);
+  bottom: var(--s-16);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  row-gap: 6px;
+  column-gap: var(--s-24);
+  min-width: 200px;
+  padding: 10px 12px 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-cap);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.splat__loading-label { color: var(--grey-ink); }
+.splat__loading-pct { font-variant-numeric: tabular-nums; }
+.splat__loading-bar {
+  grid-column: 1 / -1;
+  height: 1px;
+  background: var(--rule);
+  overflow: hidden;
+}
+.splat__loading-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform var(--med) var(--ease);
+}
+
+.splat__cap { justify-content: space-between; gap: var(--s-16); }
+.splat__cap > span:first-child { display: inline-flex; align-items: baseline; }
+.splat__hint { color: var(--grey-ink); text-align: right; white-space: nowrap; }
+.splat .float__actions .link:disabled { opacity: 0.4; cursor: default; }
+.splat .float__actions .link:disabled::after { display: none; }
+
+/* An outbound link in a bar of buttons: underline on hover only, like its neighbours */
+a.link.link--plain::after { transform: scaleX(0); }
+a.link.link--plain:hover::after,
+a.link.link--plain:focus-visible::after { animation: none; transform: scaleX(1); transform-origin: left center; }
+
+/* Sheet: the title moves into the bar, the caption goes, the scene takes the height */
+.float.is-sheet .splat__frame { aspect-ratio: auto; height: 62dvh; }
+.splat__title { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* ── Drawing controls (user-facing: shown once a drawing is placed) ────── */
 
@@ -1106,10 +1197,10 @@ img.img-ready   { opacity: 1; }
   .panel__title { margin: var(--s-8) 0 var(--s-24); }
   .axo { margin-top: var(--s-24); }
   .axo__frame { aspect-ratio: 1 / 1; max-height: 70dvh; }
-  .axo__cap, .panel__text, .archive { padding-left: var(--gutter); padding-right: var(--gutter); }
+  .axo__cap, .panel__text, .archive, .scans { padding-left: var(--gutter); padding-right: var(--gutter); }
   .panel__text { padding-top: var(--s-24); }
   .panel__note, .panel__empty { margin-left: var(--gutter); margin-right: var(--gutter); }
-  .archive { padding-top: var(--s-24); }
+  .archive, .scans { padding-top: var(--s-24); }
 
   .float.is-sheet { z-index: 9000; }
 

@@ -3,6 +3,7 @@ import type { HousingProject } from '../types';
 import { PANEL_CONTENT } from '../data/panel-content';
 import type { CamPos } from '../data/panel-content';
 import { IMAGE_PLANES } from '../config/image-planes';
+import { SPLAT_HOTSPOTS, openSplat } from '../config/splat-hotspots';
 import { useFloatingWindow } from './useFloatingWindow';
 
 // Styling lives in src/App.css (.panel, .axo, .thumb, .lb …) — see DESIGN.md.
@@ -60,6 +61,7 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
   const content  = PANEL_CONTENT[shown.id];
   const axos     = content?.axos ?? [];
   const thumbs   = content?.thumbs ?? [];
+  const scans    = SPLAT_HOTSPOTS.filter(h => h.projectId === shown.id);
   const axo      = axos[axoIdx];
   const bodyText = content?.description ?? shown.description;
   const paras    = bodyText ? bodyText.split('\n\n').filter(Boolean) : [];
@@ -70,7 +72,7 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
   }
 
   const pad2 = (n: number) => String(n).padStart(2, '0');
-  const isEmpty = !axo && paras.length === 0 && !shown.note && thumbs.length === 0;
+  const isEmpty = !axo && paras.length === 0 && !shown.note && thumbs.length === 0 && scans.length === 0;
 
   return (
     <>
@@ -155,6 +157,23 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
               <span className="cap">Note</span>
               <p>{shown.note}</p>
             </div>
+          )}
+
+          {/* 3D scans — the in-map pin's keyboard / screen-reader twin, and the focus target on close */}
+          {scans.length > 0 && (
+            <section className="scans" aria-label="3D scans">
+              <h3 className="section-head">
+                <span>3D scan</span>
+                <span>{pad2(scans.length)}</span>
+              </h3>
+              {scans.map(sc => (
+                <button key={sc.id} className="scan-row" onClick={() => openSplat({ id: sc.id })}>
+                  <span className="dot" aria-hidden="true" />
+                  <span className="scan-row__title">{sc.title}</span>
+                  <span className="scan-row__go">Enter&nbsp;→</span>
+                </button>
+              ))}
+            </section>
           )}
 
           {/* Archive thumbnails */}

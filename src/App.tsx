@@ -4,6 +4,8 @@ import { ProjectPanel } from './components/ProjectPanel';
 import { PROJECT_CAMERAS } from './config/cameras';
 import { IMAGE_PLANES } from './config/image-planes';
 import { VIDEO_HOTSPOTS } from './config/video-hotspots';
+import { SPLAT_HOTSPOTS, splatEmbedUrl, splatViewerUrl } from './config/splat-hotspots';
+import type { SplatOpenDetail } from './config/splat-hotspots';
 import { DEV_TOOLS } from './config/dev';
 import { PANEL_CONTENT } from './data/panel-content';
 import { useFloatingWindow } from './components/useFloatingWindow';
@@ -47,7 +49,9 @@ export default function App() {
   const [flyTarget, setFlyTarget] = useState<FlyTarget | null>(null);
   const [bearing, setBearing] = useState(0);
   const [capture, setCapture] = useState<Record<string, number> | null>(null);
+  const [pick, setPick] = useState<{ lat: number; lng: number; height: number } | null>(null);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [splatOpen, setSplatOpen] = useState<SplatOpenDetail | null>(null);
   // Which image-plane drawings are shown in the 3D scene — starts empty (nothing
   // shown) and is driven per-drawing from the "show in place" toggle in the
   // enlarged image lightbox, keyed by ImagePlane id.
@@ -102,6 +106,18 @@ export default function App() {
       window.removeEventListener('cesium:capture', h);
       if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    const h = (e: Event) => setPick((e as CustomEvent).detail);
+    window.addEventListener('cesium:pick', h);
+    return () => window.removeEventListener('cesium:pick', h);
+  }, []);
+
+  useEffect(() => {
+    const h = (e: Event) => setSplatOpen((e as CustomEvent<SplatOpenDetail>).detail);
+    window.addEventListener('cesium:splat-open', h);
+    return () => window.removeEventListener('cesium:splat-open', h);
   }, []);
 
   useEffect(() => {
@@ -360,9 +376,11 @@ export default function App() {
 
       <ProjectPanel project={selected} onClose={() => setSelected(null)} visiblePlanes={visiblePlanes} onTogglePlane={togglePlaneVisible} />
 
+      {splatOpen && <SplatOverlay key={splatOpen.id} open={splatOpen} onClose={() => setSplatOpen(null)} />}
       {videoSrc && <VideoOverlay key={videoSrc} videoSrc={videoSrc} onClose={() => setVideoSrc(null)} />}
 
       {DEV_TOOLS && capture && <CameraToast capture={capture} defaultId={selected?.id ?? null} projects={ALL_PROJECTS} onDismiss={() => setCapture(null)} />}
+      {DEV_TOOLS && pick && !capture && <PickToast pick={pick} onDismiss={() => setPick(null)} />}
     </div>
   );
 }
@@ -410,6 +428,128 @@ function VideoOverlay({ videoSrc, onClose }: { videoSrc: string; onClose: () => 
           <span className="dot" aria-hidden="true" />Video&ensp;{title}
         </figcaption>
       </figure>
+    </div>
+  );
+}
+
+const SPLAT_ASPECT = 16 / 10;
+
+function SplatOverlay({ open, onClose }: { open: SplatOpenDetail; onClose: () => void }) {
+  // Larger than the video window (interiors need room), sized to the free height too, and
+  // opened on the side of the map away from the pin it came from
+  const { ref: winRef, sheet: winSheet, dragging: winDragging, style: winStyle, handlers: winHandlers } =
+    useFloatingWindow(Math.min(window.innerWidth * 0.6, 900), { aspect: SPLAT_ASPECT, chromeH: 36 + 37, avoid: open.at });
+  const hotspot = SPLAT_HOTSPOTS.find(h => h.id === open.id);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  // Tell the map to ease off while the scan is open
+  useEffect(() => () => { window.dispatchEvent(new Event('cesium:splat-close')); }, []);
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  // Messages from the embed (public/splat-viewer/embed.html): progress, first frame, Esc
+  useEffect(() => {
+    const h = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.source !== frameRef.current?.contentWindow) return;
+      const msg = e.data as { source?: string; type?: string; value?: number };
+      if (msg?.source !== 'splat') return;
+      if (msg.type === 'progress' && typeof msg.value === 'number') setProgress(msg.value);
+      else if (msg.type === 'loaded') setStatus('ready');
+      else if (msg.type === 'error') setStatus('error');
+      else if (msg.type === 'escape') onClose();
+    };
+    window.addEventListener('message', h);
+    return () => window.removeEventListener('message', h);
+  }, [onClose]);
+
+  if (!hotspot) return null;
+  const tell = (type: string) =>
+    frameRef.current?.contentWindow?.postMessage({ source: 'atlas', type }, window.location.origin);
+  const fullScreen = () => { frameRef.current?.requestFullscreen?.().catch(() => {}); };
+
+  return (
+    <div className="lb-layer">
+      <figure
+        ref={winRef}
+        className={`float lb splat${winSheet ? ' is-sheet' : ''}${winDragging ? ' is-dragging' : ''}`}
+        {...winHandlers}
+        style={winStyle}
+        role="dialog"
+        aria-label={`3D scan: ${hotspot.title}`}
+        tabIndex={-1}
+      >
+        <div className="float__bar lb__bar">
+          {winSheet ? (
+            <span className="float__meta splat__title">{hotspot.title}</span>
+          ) : (
+            <span className="float__meta lb__grip" aria-hidden="true">
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor"><rect x="0" y="0" width="10" height="1"/><rect x="0" y="5" width="10" height="1"/></svg>
+              Drag
+            </span>
+          )}
+          <span className="float__actions">
+            <button className="link" onClick={() => tell('reset')} disabled={status !== 'ready'} aria-label="Reset scan view">Reset</button>
+            {!winSheet && <button className="link" onClick={fullScreen} aria-label="Show scan full screen">Full screen</button>}
+            <a className="link link--plain" href={splatViewerUrl(hotspot)} target="_blank" rel="noreferrer"
+               aria-label="Open the scan in a new tab">New tab&nbsp;↗</a>
+            <button className="link" onClick={onClose}>Close</button>
+          </span>
+        </div>
+        <div className="splat__frame">
+          {/* Unmounted on close; the embed destroys its viewer and frees the GPU memory */}
+          <iframe
+            ref={frameRef}
+            src={splatEmbedUrl(hotspot)}
+            title={`3D scan: ${hotspot.title}`}
+            className="splat__el"
+            allow="fullscreen; xr-spatial-tracking"
+          />
+          {status !== 'ready' && (
+            <div className="splat__loading" role="status">
+              {status === 'error' ? (
+                <span className="splat__loading-label">Scan could not be loaded</span>
+              ) : (
+                <>
+                  <span className="splat__loading-label">Loading scan</span>
+                  <span className="splat__loading-pct">{progress > 0 ? `${Math.round(progress)}%` : ''}</span>
+                  <span className="splat__loading-bar"><span style={{ transform: `scaleX(${progress / 100})` }} /></span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        {!winSheet && (
+          <figcaption className="lb__cap splat__cap">
+            <span><span className="dot" aria-hidden="true" />3D scan&ensp;{hotspot.title}</span>
+            <span className="splat__hint">Drag to look · Scroll to move</span>
+          </figcaption>
+        )}
+      </figure>
+    </div>
+  );
+}
+
+function PickToast({ pick, onDismiss }: {
+  pick: { lat: number; lng: number; height: number };
+  onDismiss: () => void;
+}) {
+  const snippet = `lat: ${pick.lat}, lng: ${pick.lng}, height: ${pick.height},`;
+  return (
+    <div className="devcard toast" role="status">
+      <div className="devcard__head">
+        <span className="devcard__title"><span className="dot" aria-hidden="true" />Position picked</span>
+        <button className="link" onClick={onDismiss}>Dismiss</button>
+      </div>
+      <pre className="devcard__code">{snippet}</pre>
+      <button className="devcard__btn" onClick={() => navigator.clipboard.writeText(snippet)}>
+        Copy to clipboard
+      </button>
     </div>
   );
 }

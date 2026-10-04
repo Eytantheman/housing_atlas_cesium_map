@@ -8,11 +8,33 @@ const BAR_H = 36;
 
 const isSheetWidth = () => window.innerWidth < SHEET_BREAKPOINT;
 
-/** The visible map area (the `.map` element), falling back to the viewport. */
-function freeArea() {
+type Area = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * The visible map area (the `.map` element, falling back to the viewport), minus the
+ * masthead: whichever of "right of it" or "below it" fits `prefW` better.
+ */
+function freeArea(prefW = 0): Area {
   const r = document.querySelector('.map')?.getBoundingClientRect();
-  if (r && r.width > 0 && r.height > 0) return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
-  return { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  const map: Area = r && r.width > 0 && r.height > 0
+    ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+    : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  // Only the masthead: the intro under it gives way on the first touch of the map anyway
+  const lc = document.querySelector('.masthead')?.getBoundingClientRect();
+  if (!lc || lc.height === 0 || lc.right <= map.left || lc.bottom <= map.top) return map;
+  const right: Area = { ...map, left: Math.max(map.left, lc.right) };
+  const below: Area = { ...map, top: Math.max(map.top, lc.bottom) };
+  const score = (a: Area) => Math.min(prefW, a.right - a.left - MARGIN * 2) * (a.bottom - a.top);
+  return score(right) >= score(below) ? right : below;
+}
+
+export interface FloatingWindowOptions {
+  /** Width / height of the content, so the window is also sized to fit the free height. */
+  aspect?: number;
+  /** Height of everything that is not content (bar, caption), used with `aspect`. */
+  chromeH?: number;
+  /** Screen point to keep clear (e.g. the clicked hotspot): the window opens on the other side. */
+  avoid?: { x: number; y: number };
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), Math.max(min, max));
@@ -27,13 +49,18 @@ const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min)
  * - On narrow screens the window is a fixed full-width sheet instead.
  * - Focus moves into the window on open and returns to the opener on close.
  */
-export function useFloatingWindow(preferredW: number) {
+export function useFloatingWindow(preferredW: number, opts: FloatingWindowOptions = {}) {
   const ref = useRef<HTMLDivElement>(null);
   const [sheet, setSheet] = useState(isSheetWidth);
   const [pos, setPos] = useState(() => {
-    const a = freeArea();
-    const w = Math.round(Math.max(280, Math.min(preferredW, a.right - a.left - MARGIN * 2)));
-    const x = a.left + MARGIN + Math.random() * Math.max(0, a.right - a.left - w - MARGIN * 2);
+    const a = freeArea(preferredW);
+    let w = Math.min(preferredW, a.right - a.left - MARGIN * 2);
+    if (opts.aspect) w = Math.min(w, (a.bottom - a.top - MARGIN * 2 - (opts.chromeH ?? 0)) * opts.aspect);
+    w = Math.round(Math.max(280, w));
+    const slack = Math.max(0, a.right - a.left - w - MARGIN * 2);
+    const x = opts.avoid
+      ? a.left + MARGIN + (opts.avoid.x < (a.left + a.right) / 2 ? slack : 0)
+      : a.left + MARGIN + Math.random() * slack;
     return { x: Math.round(x), y: a.top + MARGIN, w, placed: false };
   });
   const drag = useRef<{ id: number; sx: number; sy: number; ox: number; oy: number } | null>(null);
@@ -50,11 +77,11 @@ export function useFloatingWindow(preferredW: number) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || pos.placed) return;
-    const a = freeArea();
+    const a = freeArea(pos.w);
     const h = el.offsetHeight;
     const y = a.top + MARGIN + Math.random() * Math.max(0, a.bottom - a.top - h - MARGIN * 2);
     setPos(p => ({ ...p, y: Math.round(clamp(y, EDGE, window.innerHeight - h - EDGE)), placed: true }));
-  }, [pos.placed]);
+  }, [pos.placed, pos.w]);
 
   // Keep it on screen when its own size or the viewport changes
   useEffect(() => {
