@@ -8,6 +8,15 @@ const BAR_H = 36;
 
 const isSheetWidth = () => window.innerWidth < SHEET_BREAKPOINT;
 
+/**
+ * One floating window at a time: whoever opens one announces it, and the owners of the
+ * other kinds close theirs (image lightbox in ProjectPanel; video and 3D scan in App).
+ */
+export type FloatKind = 'image' | 'video' | 'splat';
+export const FLOAT_OPEN_EVENT = 'atlas:float-open';
+export const announceFloatOpen = (kind: FloatKind) =>
+  window.dispatchEvent(new CustomEvent<FloatKind>(FLOAT_OPEN_EVENT, { detail: kind }));
+
 type Area = { left: number; top: number; right: number; bottom: number };
 
 /**

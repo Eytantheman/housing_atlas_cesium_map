@@ -4,7 +4,8 @@ import { PANEL_CONTENT } from '../data/panel-content';
 import type { CamPos } from '../data/panel-content';
 import { IMAGE_PLANES } from '../config/image-planes';
 import { SPLAT_HOTSPOTS, openSplat } from '../config/splat-hotspots';
-import { useFloatingWindow } from './useFloatingWindow';
+import { useFloatingWindow, announceFloatOpen, FLOAT_OPEN_EVENT } from './useFloatingWindow';
+import type { FloatKind } from './useFloatingWindow';
 
 // Styling lives in src/App.css (.panel, .axo, .thumb, .lb …) — see DESIGN.md.
 
@@ -25,6 +26,7 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
     // If this image is also registered as a 3D image-plane drawing, the lightbox
     // gets a "show in place" toggle that projects it onto the model.
     const planeId = IMAGE_PLANES.find(p => p.imageUrl === src)?.id;
+    announceFloatOpen('image');
     setLbImg({ src, cap, camPos, planeId });
     if (camPos) window.dispatchEvent(new CustomEvent('cesium:image-cam', { detail: { ...camPos, id: Date.now() } }));
   }
@@ -36,6 +38,7 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
 
   useEffect(() => {
     clearTimeout(timerRef.current);
+    setLbImg(null); // a window belongs to the project it was opened from
     if (project) {
       setShown(project);
       setAxoIdx(0);
@@ -48,6 +51,12 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
     }
     return () => clearTimeout(timerRef.current);
   }, [project]);
+
+  useEffect(() => {
+    const h = (e: Event) => { if ((e as CustomEvent<FloatKind>).detail !== 'image') setLbImg(null); };
+    window.addEventListener(FLOAT_OPEN_EVENT, h);
+    return () => window.removeEventListener(FLOAT_OPEN_EVENT, h);
+  }, []);
 
   useEffect(() => {
     if (!lbImg) return;
@@ -204,6 +213,7 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
 
       {lbImg && (
         <ImageLightbox
+          key={lbImg.src}
           src={lbImg.src} caption={lbImg.cap} onClose={() => setLbImg(null)}
           planeId={lbImg.planeId}
           shown={lbImg.planeId ? !!visiblePlanes[lbImg.planeId] : false}

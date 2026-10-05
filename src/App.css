@@ -12,6 +12,7 @@
 /* ── Shell + map area ──────────────────────────────────────────────────── */
 
 .atlas {
+  --spine-w: 40px;   /* the folded index */
   --map-right: var(--index-w);
   --map-bottom: 0px;
   position: relative;
@@ -69,9 +70,11 @@
 
 @media (min-width: 1280px) {
   .atlas.has-selection { --map-right: calc(var(--index-w) + var(--panel-w)); }
+  .atlas.has-selection.index-folded { --map-right: calc(var(--spine-w) + var(--panel-w)); }
 }
 @media (min-width: 1024px) and (max-width: 1279px) {
-  .atlas.has-selection { --map-right: var(--panel-w); }
+  /* Too narrow for a spread: the unfolded index lies over the map instead of pushing it */
+  .atlas.has-selection { --map-right: calc(var(--spine-w) + var(--panel-w)); }
 }
 
 /* ── Shared typographic atoms ──────────────────────────────────────────── */
@@ -276,11 +279,89 @@ a.link:hover::after,
   flex-direction: column;
   background: var(--paper);
   border-left: 1px solid var(--rule);
-  transition: right var(--med) var(--ease);
+  transition: right var(--med) var(--ease), width var(--med) var(--ease);
 }
-@media (min-width: 1280px) {
+@media (min-width: 1024px) {
   .has-selection .index { right: var(--panel-w); }
+
+  /* Folding: the column narrows to a spine; its contents keep their width (no reflow while
+     it moves), fade out first, and the spine fades in once the fold has mostly closed */
+  .index { overflow: hidden; }
+  .index__head,
+  .index__body {
+    min-width: calc(var(--index-w) - 1px);
+    transition: opacity var(--fast) var(--ease) 0.16s;
+  }
+  .index-folded .index { width: var(--spine-w); }
+  .index-folded .index__head,
+  .index-folded .index__body { opacity: 0; transition-delay: 0s; }
+
+  .index__label--desk { display: flex; align-items: baseline; }
+  .index__fold { margin-left: auto; color: var(--grey-ink); font-weight: 400; }
+  .index__fold:hover { color: var(--ink); }
 }
+
+/* The spine: a vertical tab (book spine) with the Index label on top and the map tools below */
+.index__spine {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  z-index: 1;
+  width: calc(var(--spine-w) - 1px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--fast) var(--ease);
+}
+.index-folded .index__spine {
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0.2s;
+}
+.spine__open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-16);
+  width: 100%;
+  padding: 20px 0 var(--s-16);
+  border-bottom: 1px solid var(--ink);
+  transition: background var(--fast) var(--ease);
+}
+.spine__open:hover { background: var(--white); }
+.spine__open:focus-visible { outline-offset: -4px; }
+.spine__label {
+  writing-mode: vertical-rl;
+  font-size: var(--fs-14);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.spine__label .index__count { margin: 6px 0 0; }
+/* Chevron pointing out of the spine: "unfold this way" */
+.spine__chev {
+  width: 7px;
+  height: 7px;
+  margin-left: 3px;
+  border-left: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--fast) var(--ease);
+}
+.spine__open:hover .spine__chev { transform: translateX(-3px) rotate(45deg); }
+
+.spine__tools .tools {
+  writing-mode: vertical-rl;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--s-16);
+  margin: 0;
+  padding: var(--s-16) 0;
+}
+.spine__tools .tool { min-height: 0; min-width: 32px; padding: 4px 0; justify-content: center; }
+.spine__tools .tool--north { margin: 0; order: -1; } /* north on top, nearest the map */
 
 .index__head {
   flex-shrink: 0;

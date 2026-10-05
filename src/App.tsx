@@ -8,7 +8,8 @@ import { SPLAT_HOTSPOTS, splatEmbedUrl, splatViewerUrl } from './config/splat-ho
 import type { SplatOpenDetail } from './config/splat-hotspots';
 import { DEV_TOOLS } from './config/dev';
 import { PANEL_CONTENT } from './data/panel-content';
-import { useFloatingWindow } from './components/useFloatingWindow';
+import { useFloatingWindow, announceFloatOpen, FLOAT_OPEN_EVENT, SHEET_BREAKPOINT } from './components/useFloatingWindow';
+import type { FloatKind } from './components/useFloatingWindow';
 import type { HousingProject } from './types';
 import allProjectsData from './data/housing-atlas.json';
 import './App.css';
@@ -69,6 +70,8 @@ export default function App() {
   const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Phone layout only: the index collapses into a bottom drawer. Ignored on desktop.
   const [indexOpen, setIndexOpen] = useState(false);
+  const [indexUnfolded, setIndexUnfolded] = useState(false); // desktop: index unfolded over a selection
+  const isDesk = useIsDesk();
 
   const sortedList = useMemo(() => {
     const amsterdam = nearestNeighborSort(ALL_PROJECTS.filter(p => p.city === 'Amsterdam'));
@@ -114,14 +117,25 @@ export default function App() {
     return () => window.removeEventListener('cesium:pick', h);
   }, []);
 
+  // One floating window at a time (see announceFloatOpen)
   useEffect(() => {
-    const h = (e: Event) => setSplatOpen((e as CustomEvent<SplatOpenDetail>).detail);
+    const h = (e: Event) => {
+      const kind = (e as CustomEvent<FloatKind>).detail;
+      if (kind !== 'video') setVideoSrc(null);
+      if (kind !== 'splat') setSplatOpen(null);
+    };
+    window.addEventListener(FLOAT_OPEN_EVENT, h);
+    return () => window.removeEventListener(FLOAT_OPEN_EVENT, h);
+  }, []);
+
+  useEffect(() => {
+    const h = (e: Event) => { announceFloatOpen('splat'); setSplatOpen((e as CustomEvent<SplatOpenDetail>).detail); };
     window.addEventListener('cesium:splat-open', h);
     return () => window.removeEventListener('cesium:splat-open', h);
   }, []);
 
   useEffect(() => {
-    const h = (e: Event) => setVideoSrc((e as CustomEvent<string>).detail);
+    const h = (e: Event) => { announceFloatOpen('video'); setVideoSrc((e as CustomEvent<string>).detail); };
     window.addEventListener('cesium:video-open', h);
     return () => window.removeEventListener('cesium:video-open', h);
   }, []);
@@ -191,9 +205,11 @@ export default function App() {
     if (p.lat == null || p.lng == null) return;
     const cam = PROJECT_CAMERAS[p.id] ?? { height: 250, pitch: -25, heading: 0 };
     setFlyTarget({ lat: cam.lat ?? p.lat, lng: cam.lng ?? p.lng, ...cam, id: Date.now() });
+    if (p.id !== selected?.id) { setVideoSrc(null); setSplatOpen(null); } // windows belong to the project they came from
     setSelected(p);
     setIntroVisible(false);
     setIndexOpen(false);
+    setIndexUnfolded(false); // picking a project folds the index back to its spine
   }
 
   function reloadTiles() {
@@ -228,8 +244,51 @@ export default function App() {
   const activePlaneInOtherProject = !!selected && !!activePlaneUrl &&
     ![...(selectedContent?.axos ?? []), ...(selectedContent?.thumbs ?? [])].some(i => i.src === activePlaneUrl);
 
+  // Desktop: with a project open the index folds to a spine (Index label + map tools)
+  const indexFolded = isDesk && !!selected && !indexUnfolded;
+  const toolsEl = (
+    <div className="tools" role="toolbar" aria-label="Map controls">
+      <button
+        className="tool tool--mode"
+        onClick={() => setShow3dTiles(v => !v)}
+        title={show3dTiles ? 'Switch to 2D satellite' : 'Switch to 3D tiles'}
+        aria-label={show3dTiles ? 'Switch to 2D satellite' : 'Switch to 3D tiles'}
+      >
+        <span className={show3dTiles ? 'is-on' : ''}>3D</span>
+        <span className="tool__slash">/</span>
+        <span className={!show3dTiles ? 'is-on' : ''}>2D</span>
+      </button>
+      <button
+        className={`tool tool--planes is-${planesState}`}
+        onClick={() => {
+          // All shown -> hide all; none or some shown -> show all
+          const next = !allPlanesVisible;
+          setVisiblePlanes(Object.fromEntries(IMAGE_PLANES.map(p => [p.id, next])));
+          if (!next) setActivePlaneId(null);
+        }}
+        title={allPlanesVisible ? 'Hide all drawings' : 'Show all drawings'}
+        aria-pressed={planesState === 'mixed' ? 'mixed' : allPlanesVisible}
+      >
+        <span className="tool__mark" aria-hidden="true" />
+        Drawings
+      </button>
+      <button
+        className={`tool tool--north${Math.round(bearing) % 360 === 0 ? ' is-north' : ''}`}
+        onClick={resetNorth}
+        title="Reset to north"
+        aria-label="Reset view to north"
+      >
+        <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true"
+             style={{ transform: `rotate(${-bearing}deg)` }}>
+          <path d="M5 1 L5 13 M1.5 4.5 L5 1 L8.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+        N
+      </button>
+    </div>
+  );
+
   return (
-    <div className={`atlas${selected ? ' has-selection' : ''}`}>
+    <div className={`atlas${selected ? ' has-selection' : ''}${indexFolded ? ' index-folded' : ''}`}>
       <CesiumViewer
         tourProjects={[]}
         flyToTarget={flyTarget}
@@ -283,7 +342,24 @@ export default function App() {
 
       {/* Persistent project index */}
       <nav className={`index${indexOpen ? ' is-open' : ''}`} aria-label="Housing projects">
-        <div className="index__head">
+        {isDesk && (
+          <div className="index__spine" inert={!indexFolded}>
+            <button
+              className="spine__open"
+              onClick={() => setIndexUnfolded(true)}
+              aria-expanded={false}
+              aria-controls="index-list"
+              aria-label={`Show index, ${ALL_PROJECTS.length} projects`}
+            >
+              <span className="spine__chev" aria-hidden="true" />
+              <span className="spine__label">
+                Index <span className="index__count">{String(ALL_PROJECTS.length).padStart(2, '0')}</span>
+              </span>
+            </button>
+            <div className="spine__tools">{toolsEl}</div>
+          </div>
+        )}
+        <div className="index__head" inert={indexFolded}>
           <button
             className="index__toggle"
             onClick={() => { setIndexOpen(v => !v); setIntroVisible(false); }}
@@ -296,49 +372,18 @@ export default function App() {
           </button>
           <div className="index__label index__label--desk">
             Index <span className="index__count">{String(ALL_PROJECTS.length).padStart(2, '0')}</span>
+            {isDesk && selected && (
+              <button className="link index__fold" onClick={() => setIndexUnfolded(false)}
+                      aria-expanded={true} aria-controls="index-list">
+                Fold&nbsp;→
+              </button>
+            )}
           </div>
 
-          <div className="tools" role="toolbar" aria-label="Map controls">
-            <button
-              className="tool tool--mode"
-              onClick={() => setShow3dTiles(v => !v)}
-              title={show3dTiles ? 'Switch to 2D satellite' : 'Switch to 3D tiles'}
-              aria-label={show3dTiles ? 'Switch to 2D satellite' : 'Switch to 3D tiles'}
-            >
-              <span className={show3dTiles ? 'is-on' : ''}>3D</span>
-              <span className="tool__slash">/</span>
-              <span className={!show3dTiles ? 'is-on' : ''}>2D</span>
-            </button>
-            <button
-              className={`tool tool--planes is-${planesState}`}
-              onClick={() => {
-                // All shown -> hide all; none or some shown -> show all
-                const next = !allPlanesVisible;
-                setVisiblePlanes(Object.fromEntries(IMAGE_PLANES.map(p => [p.id, next])));
-                if (!next) setActivePlaneId(null);
-              }}
-              title={allPlanesVisible ? 'Hide all drawings' : 'Show all drawings'}
-              aria-pressed={planesState === 'mixed' ? 'mixed' : allPlanesVisible}
-            >
-              <span className="tool__mark" aria-hidden="true" />
-              Drawings
-            </button>
-            <button
-              className={`tool tool--north${Math.round(bearing) % 360 === 0 ? ' is-north' : ''}`}
-              onClick={resetNorth}
-              title="Reset to north"
-              aria-label="Reset view to north"
-            >
-              <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true"
-                   style={{ transform: `rotate(${-bearing}deg)` }}>
-                <path d="M5 1 L5 13 M1.5 4.5 L5 1 L8.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
-              </svg>
-              N
-            </button>
-          </div>
+          {toolsEl}
         </div>
 
-        <div className="index__body" id="index-list">
+        <div className="index__body" id="index-list" inert={indexFolded}>
           {cityGroups.length === 0 ? (
             <p className="empty">No projects in the atlas yet.</p>
           ) : (
@@ -433,6 +478,19 @@ function VideoOverlay({ videoSrc, onClose }: { videoSrc: string; onClose: () => 
 }
 
 const SPLAT_ASPECT = 16 / 10;
+
+/** Desktop layout (index column + panel) vs. phone/tablet sheets; matches SHEET_BREAKPOINT. */
+function useIsDesk() {
+  const query = `(min-width: ${SHEET_BREAKPOINT}px)`;
+  const [desk, setDesk] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const h = () => setDesk(mq.matches);
+    mq.addEventListener('change', h);
+    return () => mq.removeEventListener('change', h);
+  }, [query]);
+  return desk;
+}
 
 function SplatOverlay({ open, onClose }: { open: SplatOpenDetail; onClose: () => void }) {
   // Larger than the video window (interiors need room), sized to the free height too, and
