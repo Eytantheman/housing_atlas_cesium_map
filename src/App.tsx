@@ -226,10 +226,9 @@ export default function App() {
   // Called from the "show in place" toggle under an enlarged image in the
   // project panel — shows/hides that one drawing and makes it the active
   // plane so the height/opacity sliders and edit button appear for it.
-  function togglePlaneVisible(id: string) {
-    const nowVisible = !visiblePlanes[id];
-    setVisiblePlanes(v => ({ ...v, [id]: nowVisible }));
-    setActivePlaneId(nowVisible ? id : null);
+  function setPlaneVisible(id: string, on: boolean) {
+    setVisiblePlanes(v => ({ ...v, [id]: on }));
+    setActivePlaneId(a => on ? id : a === id ? null : a);
   }
 
   const visibleCount = IMAGE_PLANES.filter(p => visiblePlanes[p.id]).length;
@@ -302,7 +301,13 @@ export default function App() {
       <div className={`leftcol${introVisible ? '' : ' is-compact'}`}>
       {/* Masthead — a wall label pinned to the top-left of the model */}
       <header className="masthead">
-        <h1 className="masthead__title">Augmented Atlas</h1>
+        <h1 className="masthead__title">
+          {/* The title brings the introduction back down (or folds it away) */}
+          <button className="masthead__btn" onClick={() => setIntroVisible(v => !v)}
+                  aria-expanded={introVisible} aria-controls="intro">
+            Augmented Atlas
+          </button>
+        </h1>
         <p className="masthead__sub">of Social Housing in the NL</p>
 
         {showTileStatus && (
@@ -326,7 +331,7 @@ export default function App() {
       </header>
 
       {/* Intro — wall text that fades away after a while or on first selection */}
-      <section className={`intro${introVisible ? ' is-visible' : ''}`} aria-hidden={!introVisible} aria-label="Introduction">
+      <section id="intro" className={`intro${introVisible ? ' is-visible' : ''}`} aria-hidden={!introVisible} aria-label="Introduction">
         <button className="link intro__close" onClick={() => setIntroVisible(false)} tabIndex={introVisible ? 0 : -1}>Close</button>
         <p>
           Welcome to Augmented Atlas, a living archive of Dutch collective housing. This platform brings together research produced within the Housing Studies course (TU Delft 2024-2026) into a single interactive environment, where each case study can be explored in situ.
@@ -337,6 +342,7 @@ export default function App() {
         <p>
           Rather than presenting housing history as a fixed record, the Augmented Atlas is meant to treat the archive as an open, evolving structure, one shaped collectively by students, communities, and institutions including Nieuwe Institute, and offered here as both a research tool and a public exhibition space.
         </p>
+        <p className="intro__rights">© 2026 Architecture Archive of the Future. All rights reserved.</p>
       </section>
       </div>
 
@@ -415,11 +421,12 @@ export default function App() {
           {/* Footer credit */}
           <footer className="credit">
             Research and design: Architecture Archives of Future, TU Delft 2026
+            <br />© 2026 Architecture Archive of the Future. All rights reserved.
           </footer>
         </div>
       </nav>
 
-      <ProjectPanel project={selected} onClose={() => setSelected(null)} visiblePlanes={visiblePlanes} onTogglePlane={togglePlaneVisible} />
+      <ProjectPanel project={selected} onClose={() => setSelected(null)} visiblePlanes={visiblePlanes} onSetPlane={setPlaneVisible} />
 
       {splatOpen && <SplatOverlay key={splatOpen.id} open={splatOpen} onClose={() => setSplatOpen(null)} />}
       {videoSrc && <VideoOverlay key={videoSrc} videoSrc={videoSrc} onClose={() => setVideoSrc(null)} />}

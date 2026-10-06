@@ -4,6 +4,7 @@ import { IMAGE_PLANES, type ImagePlane } from '../config/image-planes';
 import { VIDEO_HOTSPOTS } from '../config/video-hotspots';
 import { SPLAT_HOTSPOTS, openSplat } from '../config/splat-hotspots';
 import { DEV_TOOLS } from '../config/dev';
+import { MapHint } from './MapHint';
 
 // Cesium is loaded via CDN script tag — access the global
 declare const Cesium: typeof import('cesium');
@@ -782,6 +783,7 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
     <div className="map">
       <div ref={containerRef} className="map__canvas" />
       <div ref={creditsRef} className="map__credits" aria-label="Map data attribution" />
+      <MapHint />
 
       {activePlaneShown && (
         <div className="drawing-ctrl">

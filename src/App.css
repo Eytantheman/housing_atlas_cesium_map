@@ -68,6 +68,45 @@
 .map__credits a { color: var(--paper); text-decoration: underline; text-underline-offset: 2px; }
 .map__credits .cesium-credit-expand-link { color: var(--paper); text-decoration: underline; cursor: pointer; }
 
+/* How to move in 3D — a paper strip in the bottom-left corner, opposite the attribution */
+.map-hint {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-16);
+  max-width: calc(100% - var(--gutter) * 2);
+  padding: 4px 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-cap);
+  line-height: 1.5;
+  animation: fade-in var(--slow) var(--ease);
+}
+.map-hint__list {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--s-16);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.map-hint__how {
+  margin-right: 6px;
+  color: var(--grey-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.map-hint__close { color: var(--grey-ink); }
+.map-hint__close:hover { color: var(--ink); }
+/* Narrow screens: the attribution spans the bottom, so sit just above it */
+@media (max-width: 599px) {
+  .map-hint { bottom: 30px; }
+}
+
 @media (min-width: 1280px) {
   .atlas.has-selection { --map-right: calc(var(--index-w) + var(--panel-w)); }
   .atlas.has-selection.index-folded { --map-right: calc(var(--spine-w) + var(--panel-w)); }
@@ -250,7 +289,7 @@ a.link:hover::after,
   color: var(--ink);
   pointer-events: auto;
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateY(-24px);
   visibility: hidden;
   transition: opacity 1s var(--ease), transform 1s var(--ease), visibility 0s linear 1s;
 }
@@ -262,6 +301,21 @@ a.link:hover::after,
 }
 .intro p { margin: 0 0 0.65em; max-width: 46ch; }
 .intro p:last-child { margin-bottom: 0; }
+.intro p.intro__rights {
+  margin-top: var(--s-16);
+  font-family: var(--mono);
+  font-size: var(--fs-cap);
+  letter-spacing: 0.04em;
+  color: var(--grey-ink);
+}
+.masthead__btn {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.masthead__btn:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 .intro__close {
   float: right;
   margin: -4px 0 4px var(--s-16);
@@ -647,6 +701,34 @@ a.link:hover::after,
 
 /* Archive */
 .archive { padding: var(--s-40) var(--s-24) 0; }
+
+/* Other sources: a plain link list under the archive */
+.sources { padding: var(--s-40) var(--s-24) 0; }
+.sources__list { margin: 0; padding: 0; list-style: none; }
+.sources__list li + li { border-top: 1px solid var(--rule); }
+.source {
+  display: grid;
+  grid-template-columns: 76px 1fr auto;
+  column-gap: 12px;
+  align-items: baseline;
+  padding: 10px 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+.source__kind,
+.source__meta,
+.source__go {
+  font-family: var(--mono);
+  font-size: var(--fs-cap);
+  letter-spacing: 0.04em;
+  color: var(--grey-ink);
+}
+.source__kind { text-transform: uppercase; }
+.source__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.source__title { font-size: var(--fs-14); line-height: 1.35; }
+.source:hover .source__title { text-decoration: underline; text-underline-offset: 2px; }
+.source:hover .source__go { color: var(--accent); }
+.source:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .scans { padding: var(--s-40) var(--s-24) 0; }
 .scan-row {
   display: flex;
@@ -722,6 +804,11 @@ a.link:hover::after,
   width: 6px; height: 6px;
   background: var(--accent);
 }
+/* Drawing that is situated in the 3D model ("show in place") */
+.thumb__tag--situated { top: auto; bottom: 0; }
+.thumb__tag--situated::before { background: none; box-shadow: inset 0 0 0 1px currentColor; }
+.thumb__tag--situated.is-on { background: var(--ink); color: var(--paper); }
+.thumb__tag--situated.is-on::before { background: var(--accent); box-shadow: none; }
 .thumb__cap {
   margin-top: 6px;
   font-family: var(--mono);

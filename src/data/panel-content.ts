@@ -14,6 +14,15 @@ export interface ThumbItem {
   camPos?: CamPos;
 }
 
+/** An outside source on the project (press, archive record, blog, social account), shown as a link list */
+export interface SourceLink {
+  kind: 'Archive' | 'Images' | 'Press' | 'Blog' | 'Social' | 'Reference';
+  title: string;
+  publisher: string;
+  date?: string;      // as precise as known: '2021', '2021-08-05'
+  url: string;
+}
+
 export interface PanelContent {
   period?: string;
   programme?: string;
@@ -21,6 +30,8 @@ export interface PanelContent {
   description?: string;
   axos?: AxoSlide[];
   thumbs?: ThumbItem[];
+  archiveTitle?: string;  // heading above the thumbs; defaults to 'Archive'
+  sources?: SourceLink[]; // 'Other sources' list under the thumbs
 }
 
 export const PANEL_CONTENT: Record<number, PanelContent> = {
@@ -812,7 +823,7 @@ And while Groenhoven does a good job of integrating this collectivity, it also r
       { src: '/images/37/thumb-5.jpg', caption: '01.6  STIG7.9 High-rise. Studies/proposals for apartment floor plans. Isometric view. 1970-1971' },
       { src: '/images/37/thumb-6.jpg', caption: '01.7  STIG7.2 High-rise buildings. Sketches. Apartment floor plans, sections, facades, site plans, sun exposure studies. Roll 2 , 1970-1973' },
       { src: '/images/37/thumb-7.jpg', caption: '01.8  STIG7.13 High-rise. Pedestrian street perspectives. Design drawings/presentation drawings.' },
-      { src: '/images/37/thumb-8.jpg', caption: '01.9  STIG7.13 High-rise. Pedestrian street perspectives. Design drawings/presentation drawings.' },
+      { src: '/images/37/thumb-8.jpg', caption: '01.9  STIG7.13 High-rise. Pedestrian street perspectives. Design drawings/presentation drawings.', camPos: { lat: 52.325386, lng: 4.977244, height: 41.9, pitch: 12.8, heading: 286.7 } },
       { src: '/images/37/thumb-9.jpg', caption: '01.10  STIG7.12 High-rise buildings. Sites and axonometry. Design drawings/presentation drawings.' },
       { src: '/images/37/thumb-10.jpg', caption: '01.11  STIG7.12 High-rise buildings. Sites and axonometry. Design drawings/presentation drawings.' },
       { src: '/images/37/thumb-11.jpg', caption: '02.1  Amsterdam Beeldbank Archive (n.d.)', camPos: { lat: 52.328257, lng: 4.975334, height: 362.8, pitch: -45.1, heading: 191.8 } },
@@ -820,6 +831,31 @@ And while Groenhoven does a good job of integrating this collectivity, it also r
       { src: '/images/37/thumb-13.jpg', caption: '02.3  unknown' },
       { src: '/images/37/thumb-14.jpg', caption: '02.4  Nieuwe Instituut (n.d.)' },
       { src: '/images/37/thumb-15.jpg', caption: '02.5  unknown' },
+    ],
+    archiveTitle: 'National Archive',
+    sources: [
+      { kind: 'Archive',   title: 'Archief Joop van Stigt (STIG), inventory', publisher: 'Nieuwe Instituut', url: 'https://zoeken.nieuweinstituut.nl/images/archives/pdf/STIG.ead.pdf' },
+      { kind: 'Archive',   title: 'Luchtfoto Bijlmer Oost', publisher: 'Stadsarchief Amsterdam', url: 'https://archief.amsterdam/beeldbank/detail/1ab2cb83-c558-081e-973b-f5f04cc5061c' },
+      { kind: 'Images',    title: 'Complex Groenhoven', publisher: 'Buro Van Stigt', url: 'https://burovanstigt.nl/complex-groenhoven/' },
+      { kind: 'Images',    title: 'Category: Groenhoven, Amsterdam', publisher: 'Wikimedia Commons', date: '2021', url: 'https://commons.wikimedia.org/wiki/Category:Groenhoven,_Amsterdam' },
+      { kind: 'Press',     title: 'Amsterdamse architecten: Joop van Stigt', publisher: 'Ons Amsterdam', date: '2007-10-04', url: 'https://onsamsterdam.nl/artikelen/amsterdamse-architecten-joop-van-stigt' },
+      { kind: 'Press',     title: 'Nieuw: Professor Joop van Stigtpark', publisher: '1104 en zo', date: '2013-12-07', url: 'https://1104enzo.nl/nieuw-professor-joop-van-stigtpark/' },
+      { kind: 'Press',     title: 'Zuidoost wil flats Gouden Leeuw en Groenhoven tot monument maken', publisher: 'AT5', date: '2021', url: 'https://www.at5.nl/artikelen/205255/zuidoost-wil-flats-gouden-leeuw-en-groenhoven-tot-monument-maken' },
+      { kind: 'Press',     title: 'Gouden Leeuw en Groenhoven gaan voor status van gemeentelijk monument', publisher: 'Bijlmer en Meer', date: '2021', url: 'http://www.bijlmerenmeer.nl/gouden-leeuw-en-groenhoven-gaan-voor-status-van-gemeentelijk-monument/' },
+      { kind: 'Press',     title: 'Flats Gouden Leeuw en Groenhoven in Bijlmer zijn nu monumenten: "We zijn nu een beetje erkend"', publisher: 'AT5', date: '2021-08-05', url: 'https://www.at5.nl/artikelen/210349/flats-gouden-leeuw-en-groenhoven-in-bijlmer-zijn-nu-monumenten-we-zijn-nu-een-beetje-erkend' },
+      { kind: 'Press',     title: 'Woontorens in de Bijlmer zijn monument geworden', publisher: 'Post65', date: '2021-08-25', url: 'https://post65.nl/woontorens-bijlmer-monument/' },
+      { kind: 'Press',     title: 'Gouden Leeuw en Groenhoven monument', publisher: 'Monumentaal', date: '2021', url: 'https://monumentaal.com/gouden-leeuw-en-groenhoven-monument/' },
+      { kind: 'Press',     title: 'Duurzame toekomst voor Groenhoven', publisher: 'Zuidoost en Meer', date: '2025-08-23', url: 'https://www.zuidoostenmeer.nl/masterplan-zuidoost/masterplan-zuidoost/16443/duurzame-toekomst-voor-groenhoven' },
+      { kind: 'Press',     title: 'VvE Groenhoven 106-866, 8 torens in beweging', publisher: 'Energiesprong Alliantie', date: '2025-12-06', url: 'https://energiesprongalliantie.nl/project/vve-groenhoven-106-866-8-torens-in-beweging/' },
+      { kind: 'Press',     title: 'Tour langs Gouden Leeuw en Groenhoven', publisher: 'Open Monumentendag', date: '2026', url: 'https://www.openmonumentendag.nl/monument/tour-langs-gouden-leeuw-en-groenhoven/' },
+      { kind: 'Blog',      title: 'Eten in Groenhoven', publisher: '1104 en zo', date: '2012-09-17', url: 'https://1104enzo.nl/eten-in-groenhoven/' },
+      { kind: 'Blog',      title: 'Gouden Leeuw, monumentaal!', publisher: 'Rob Alberts', date: '2021-07-29', url: 'https://robalberts.wordpress.com/2021/07/29/gouden-leeuw-monumentaal/' },
+      { kind: 'Social',    title: 'Collectief Groenhoven: café, shared dinners, events', publisher: 'collectiefgroenhoven.nl', url: 'https://www.collectiefgroenhoven.nl/' },
+      { kind: 'Social',    title: '@collectiefgroenhoven', publisher: 'Instagram', url: 'https://instagram.com/collectiefgroenhoven' },
+      { kind: 'Social',    title: 'Café Groenhoven', publisher: 'Facebook', url: 'https://www.facebook.com/CAFEGROENHOVEN/' },
+      { kind: 'Social',    title: 'Wonen in Groenhoven', publisher: 'VvE Groenhoven', url: 'https://www.vvegroenhoven.nl/' },
+      { kind: 'Reference', title: 'Groenhoven (Amsterdam)', publisher: 'Wikipedia (NL)', url: 'https://nl.wikipedia.org/wiki/Groenhoven_(Amsterdam)' },
+      { kind: 'Reference', title: 'De Gouden Leeuw en Groenhoven', publisher: 'Architectuur.org', url: 'https://www.architectuur.org/bouwwerk/985/De_Gouden_Leeuw_en_Groenhoven.html' },
     ],
   },
   38: {

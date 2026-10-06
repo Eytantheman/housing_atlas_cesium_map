@@ -13,19 +13,29 @@ interface Props {
   project: HousingProject | null;
   onClose: () => void;
   visiblePlanes: Record<string, boolean>;
-  onTogglePlane: (id: string) => void;
+  onSetPlane: (id: string, on: boolean) => void;
 }
 
-export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }: Props) {
+/** ImagePlane id for an image that is situated in the 3D model, if any */
+const planeIdFor = (src: string) => IMAGE_PLANES.find(p => p.imageUrl === src)?.id;
+
+export function ProjectPanel({ project, onClose, visiblePlanes, onSetPlane }: Props) {
   const [visible, setVisible] = useState(false);
   const [shown, setShown]     = useState<HousingProject | null>(null);
   const [axoIdx, setAxoIdx]   = useState(0);
   const [lbImg, setLbImg]     = useState<{ src: string; cap: string; camPos?: CamPos; planeId?: string } | null>(null);
+  // The drawing last put on the model from "show in place"; it comes off again
+  // as soon as another image is opened.
+  const [placedId, setPlacedId] = useState<string | null>(null);
 
   function openImage(src: string, cap: string, camPos?: CamPos) {
     // If this image is also registered as a 3D image-plane drawing, the lightbox
     // gets a "show in place" toggle that projects it onto the model.
-    const planeId = IMAGE_PLANES.find(p => p.imageUrl === src)?.id;
+    const planeId = planeIdFor(src);
+    if (placedId && placedId !== planeId) {
+      onSetPlane(placedId, false);
+      setPlacedId(null);
+    }
     announceFloatOpen('image');
     setLbImg({ src, cap, camPos, planeId });
     if (camPos) window.dispatchEvent(new CustomEvent('cesium:image-cam', { detail: { ...camPos, id: Date.now() } }));
@@ -70,6 +80,7 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
   const content  = PANEL_CONTENT[shown.id];
   const axos     = content?.axos ?? [];
   const thumbs   = content?.thumbs ?? [];
+  const sources  = content?.sources ?? [];
   const scans    = SPLAT_HOTSPOTS.filter(h => h.projectId === shown.id);
   const axo      = axos[axoIdx];
   const bodyText = content?.description ?? shown.description;
@@ -80,8 +91,14 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
     setAxoIdx(i => (i + delta + axos.length) % axos.length);
   }
 
+  // 'on' when the thumb's drawing is currently shown on the model, 'off' when it could be
+  function situation(src: string): 'on' | 'off' | undefined {
+    const id = planeIdFor(src);
+    return id ? (visiblePlanes[id] ? 'on' : 'off') : undefined;
+  }
+
   const pad2 = (n: number) => String(n).padStart(2, '0');
-  const isEmpty = !axo && paras.length === 0 && !shown.note && thumbs.length === 0 && scans.length === 0;
+  const isEmpty = !axo && paras.length === 0 && !shown.note && thumbs.length === 0 && scans.length === 0 && sources.length === 0;
 
   return (
     <>
@@ -187,17 +204,42 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
 
           {/* Archive thumbnails */}
           {thumbs.length > 0 && (
-            <section className="archive" aria-label="Archive">
+            <section className="archive" aria-label={content?.archiveTitle ?? 'Archive'}>
               <h3 className="section-head">
-                <span>Archive</span>
+                <span>{content?.archiveTitle ?? 'Archive'}</span>
                 <span>{pad2(thumbs.length)}</span>
               </h3>
               <div className="archive__grid">
                 {thumbs.map((t, i) => (
                   <Thumb key={i} src={t.src} caption={t.caption} camPos={t.camPos}
+                         situated={situation(t.src)}
                          onOpen={(src, cap, camPos) => openImage(src, cap, camPos)} />
                 ))}
               </div>
+            </section>
+          )}
+
+          {/* Other sources — press, archive records, blogs, social accounts; links only */}
+          {sources.length > 0 && (
+            <section className="sources" aria-label="Other sources">
+              <h3 className="section-head">
+                <span>Other sources</span>
+                <span>{pad2(sources.length)}</span>
+              </h3>
+              <ul className="sources__list">
+                {sources.map(s => (
+                  <li key={s.url}>
+                    <a className="source" href={s.url} target="_blank" rel="noopener noreferrer">
+                      <span className="source__kind">{s.kind}</span>
+                      <span className="source__body">
+                        <span className="source__title">{s.title}</span>
+                        <span className="source__meta">{s.publisher}{s.date ? ` · ${s.date}` : ''}</span>
+                      </span>
+                      <span className="source__go" aria-hidden="true">↗</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 
@@ -217,7 +259,18 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onTogglePlane }:
           src={lbImg.src} caption={lbImg.cap} onClose={() => setLbImg(null)}
           planeId={lbImg.planeId}
           shown={lbImg.planeId ? !!visiblePlanes[lbImg.planeId] : false}
-          onToggleInPlace={lbImg.planeId ? () => onTogglePlane(lbImg.planeId!) : undefined}
+          onToggleInPlace={lbImg.planeId ? () => {
+            const id = lbImg.planeId!;
+            if (visiblePlanes[id]) {
+              onSetPlane(id, false);
+              if (placedId === id) setPlacedId(null);
+            } else {
+              // Put it in the model and get the window out of the way
+              onSetPlane(id, true);
+              setPlacedId(id);
+              setLbImg(null);
+            }
+          } : undefined}
         />
       )}
     </>
@@ -327,13 +380,22 @@ function AxoBtn({ onClick, dir }: { onClick: React.MouseEventHandler; dir: 'prev
   );
 }
 
-function Thumb({ src, caption, camPos, onOpen }: { src: string; caption: string; camPos?: CamPos; onOpen: (src: string, cap: string, camPos?: CamPos) => void }) {
+function Thumb({ src, caption, camPos, situated, onOpen }: {
+  src: string; caption: string; camPos?: CamPos; situated?: 'on' | 'off';
+  onOpen: (src: string, cap: string, camPos?: CamPos) => void;
+}) {
+  const label = (camPos ? `Enlarge and fly to view: ${caption}` : `Enlarge: ${caption}`)
+    + (situated ? ` (situated in the 3D model${situated === 'on' ? ', shown' : ''})` : '');
   return (
     <figure className="thumb">
-      <button className="thumb__frame" onClick={() => onOpen(src, caption, camPos)}
-              aria-label={camPos ? `Enlarge and fly to view: ${caption}` : `Enlarge: ${caption}`}>
+      <button className="thumb__frame" onClick={() => onOpen(src, caption, camPos)} aria-label={label}>
         <SafeImg src={src} alt="" loading="lazy" />
         {camPos && <span className="thumb__tag">View</span>}
+        {situated && (
+          <span className={`thumb__tag thumb__tag--situated${situated === 'on' ? ' is-on' : ''}`}>
+            {situated === 'on' ? 'On model' : 'Situated'}
+          </span>
+        )}
       </button>
       <figcaption className="thumb__cap">{displayCaption(caption)}</figcaption>
     </figure>
