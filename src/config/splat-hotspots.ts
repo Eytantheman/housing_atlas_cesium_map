@@ -24,6 +24,16 @@ export interface SplatOpenDetail {
 export const openSplat = (detail: SplatOpenDetail) =>
   window.dispatchEvent(new CustomEvent<SplatOpenDetail>('cesium:splat-open', { detail }));
 
+/**
+ * Where a hotspot's scanned spot is on screen right now (client px), or null when it is
+ * off screen / too far to show its pin. Registered by the map, read every frame by the
+ * scan window to draw its view cone back to the building.
+ */
+type AnchorFn = (id: string) => { x: number; y: number } | null;
+let anchorFn: AnchorFn = () => null;
+export const setSplatAnchor = (fn: AnchorFn | null) => { anchorFn = fn ?? (() => null); };
+export const splatAnchor = (id: string) => anchorFn(id);
+
 export const SPLAT_HOTSPOTS: SplatHotspot[] = [
   {
     id: 'groenhoven-interior',

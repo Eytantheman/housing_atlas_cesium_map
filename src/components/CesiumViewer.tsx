@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { HousingProject } from '../types';
 import { IMAGE_PLANES, type ImagePlane } from '../config/image-planes';
 import { VIDEO_HOTSPOTS } from '../config/video-hotspots';
-import { SPLAT_HOTSPOTS, openSplat } from '../config/splat-hotspots';
+import { SPLAT_HOTSPOTS, openSplat, setSplatAnchor } from '../config/splat-hotspots';
 import { DEV_TOOLS } from '../config/dev';
 import { MapHint } from './MapHint';
 
@@ -78,6 +78,25 @@ function drawSplatPin(hover: boolean) {
 
   return { image: canvas.toDataURL('image/png'), width: w, height: h };
 }
+// Tiles in greyscale, except a soft-edged circle of colour around the selected project.
+// u_radius is animated (0 = all grey), so a selection reveals its surroundings outward.
+// positionWC is single precision (~0.5 m at Earth radius): plenty for a 100 m+ circle.
+const FOCUS_SHADER_GLSL = `
+void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
+  vec3 c = material.diffuse;
+  float g = dot(c, vec3(0.299, 0.587, 0.114));
+  // Horizontal distance only: a vertical cylinder, so tall buildings colour top to bottom
+  vec3 up = normalize(u_center);
+  vec3 v = fsInput.attributes.positionWC - u_center;
+  float d = length(v - dot(v, up) * up);
+  float k = 1.0 - smoothstep(u_radius - u_fade, u_radius, d);
+  material.diffuse = mix(vec3(g), c, k * step(0.5, u_radius));
+}`;
+const REVEAL_MS = 1400;
+
+/** Area kept in colour: the selected project, `radius` metres around it. */
+export interface MapFocus { lat: number; lng: number; radius: number }
+
 // Backdrop behind the tiles (visible above the horizon on tilted views):
 // a neutral studio grey instead of black, so it reads as "model", not "failure".
 const BACKDROP = '#D9D8D3';
@@ -100,9 +119,11 @@ interface Props {
   show3dTiles: boolean;
   /** Presentation only: hide the drawing controls (e.g. the active drawing belongs to another project). */
   controlsHidden?: boolean;
+  /** The one area of the 3D tiles shown in colour; null = all greyscale. */
+  focus: MapFocus | null;
 }
 
-export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visiblePlanes, activePlaneId, show3dTiles, controlsHidden = false }: Props) {
+export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visiblePlanes, activePlaneId, show3dTiles, controlsHidden = false, focus }: Props) {
   const containerRef       = useRef<HTMLDivElement>(null);
   const creditsRef         = useRef<HTMLDivElement>(null);
   const prevShow3dRef      = useRef(show3dTiles);
@@ -114,6 +135,8 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
   const savedSatCamRef     = useRef<{ lng: number; lat: number; height: number; heading: number } | null>(null);
   const show3dTilesRef     = useRef(show3dTiles);
   show3dTilesRef.current   = show3dTiles;
+  const focusShaderRef     = useRef<any>(null);
+  const focusRadiusRef     = useRef(0); // current animated radius (m)
 
   // ── Image-plane live editor ──────────────────────────────────────────────
   const planeParamsRef    = useRef<ImagePlane[]>(IMAGE_PLANES.map(p => ({ ...p })));
@@ -462,10 +485,34 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
     const onSplatClose = () => { viewer.targetFrameRate = undefined as unknown as number; };
     window.addEventListener('cesium:splat-open', onSplatOpen);
     window.addEventListener('cesium:splat-close', onSplatClose);
+    // Screen point of a scanned spot, for the scan window's view cone (same range as the pin)
+    const splatWorld = Object.fromEntries(SPLAT_HOTSPOTS.map(h => [h.id, Cesium.Cartesian3.fromDegrees(h.lng, h.lat, h.height)]));
+    setSplatAnchor(id => {
+      const p = splatWorld[id];
+      if (!p || viewer.isDestroyed()) return null;
+      if (Cesium.Cartesian3.distance(viewer.camera.positionWC, p) > 2500) return null;
+      const w = Cesium.SceneTransforms.worldToWindowCoordinates(viewer.scene, p);
+      if (!w) return null;
+      const r = viewer.scene.canvas.getBoundingClientRect();
+      if (w.x < 0 || w.y < 0 || w.x > r.width || w.y > r.height) return null;
+      return { x: r.left + w.x, y: r.top + w.y };
+    });
 
     // ── Cesium Ion (asset 2275207 = Google Photorealistic 3D Tiles, works in EEA) ──
     const emitTilesLoading = (loading: boolean, pending = 0, processing = 0) =>
       window.dispatchEvent(new CustomEvent('cesium:tiles-loading', { detail: { loading, pending, processing } }));
+
+    // One shader for the tileset's whole life (also across reloads); uniforms driven by `focus`
+    if (!focusShaderRef.current) {
+      focusShaderRef.current = new Cesium.CustomShader({
+        uniforms: {
+          u_center: { type: Cesium.UniformType.VEC3, value: new Cesium.Cartesian3() },
+          u_radius: { type: Cesium.UniformType.FLOAT, value: 0 },
+          u_fade:   { type: Cesium.UniformType.FLOAT, value: 60 },
+        },
+        fragmentShaderText: FOCUS_SHADER_GLSL,
+      });
+    }
 
     const loadTileset = (isReload = false) => {
       emitTilesLoading(true);
@@ -476,6 +523,7 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
           if (tilesetRef.current) viewer.scene.primitives.remove(tilesetRef.current);
           tilesetRef.current = tileset;
           tileset.show = show3dTilesRef.current;
+          tileset.customShader = focusShaderRef.current;
           viewer.scene.primitives.add(tileset);
 
           tileset.loadProgress.addEventListener((pending: number, processing: number) => {
@@ -626,12 +674,42 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
       window.removeEventListener('cesium:reset-north', onReset);
       window.removeEventListener('cesium:splat-open', onSplatOpen);
       window.removeEventListener('cesium:splat-close', onSplatClose);
+      setSplatAnchor(null);
       window.removeEventListener('cesium:reload-tiles', onReload);
       if (!viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Colour focus: reveal the selected project's surroundings, grey elsewhere ──
+  const focusCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  useEffect(() => {
+    const shader = focusShaderRef.current;
+    if (!shader) return;
+    const prev = focusCenterRef.current;
+    const moved = !!focus && (!prev || prev.lat !== focus.lat || prev.lng !== focus.lng);
+    if (focus && moved) {
+      // A new place: centre there and grow from nothing
+      focusCenterRef.current = { lat: focus.lat, lng: focus.lng };
+      shader.setUniform('u_center', Cesium.Cartesian3.fromDegrees(focus.lng, focus.lat, 0));
+      focusRadiusRef.current = 0;
+    }
+    if (focus) shader.setUniform('u_fade', Math.max(40, focus.radius * 0.35));
+
+    const from = focusRadiusRef.current;
+    const to = focus ? focus.radius : 0;
+    const start = performance.now();
+    let raf = 0;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / REVEAL_MS);
+      const e = 1 - Math.pow(1 - t, 3); // ease-out
+      focusRadiusRef.current = from + (to - from) * e;
+      shader.setUniform('u_radius', focusRadiusRef.current);
+      if (t < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [focus?.lat, focus?.lng, focus?.radius]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sync tour route polyline ─────────────────────────────────────────────
   useEffect(() => {

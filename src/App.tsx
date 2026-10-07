@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { CesiumViewer, type FlyTarget } from './components/CesiumViewer';
+import { CesiumViewer, type FlyTarget, type MapFocus } from './components/CesiumViewer';
 import { ProjectPanel } from './components/ProjectPanel';
-import { PROJECT_CAMERAS } from './config/cameras';
+import { PROJECT_CAMERAS, FOCUS_RADIUS } from './config/cameras';
 import { IMAGE_PLANES } from './config/image-planes';
 import { VIDEO_HOTSPOTS } from './config/video-hotspots';
-import { SPLAT_HOTSPOTS, splatEmbedUrl, splatViewerUrl } from './config/splat-hotspots';
+import { SPLAT_HOTSPOTS, splatEmbedUrl, splatViewerUrl, splatAnchor } from './config/splat-hotspots';
 import type { SplatOpenDetail } from './config/splat-hotspots';
 import { DEV_TOOLS } from './config/dev';
 import { PANEL_CONTENT } from './data/panel-content';
@@ -243,6 +243,13 @@ export default function App() {
   const activePlaneInOtherProject = !!selected && !!activePlaneUrl &&
     ![...(selectedContent?.axos ?? []), ...(selectedContent?.thumbs ?? [])].some(i => i.src === activePlaneUrl);
 
+  // The model is greyscale; the selected project's surroundings are revealed in colour
+  const mapFocus = useMemo<MapFocus | null>(() =>
+    selected && selected.lat != null && selected.lng != null
+      ? { lat: selected.lat, lng: selected.lng, radius: PROJECT_CAMERAS[selected.id]?.focusRadius ?? FOCUS_RADIUS }
+      : null,
+  [selected]);
+
   // Desktop: with a project open the index folds to a spine (Index label + map tools)
   const indexFolded = isDesk && !!selected && !indexUnfolded;
   const toolsEl = (
@@ -296,6 +303,7 @@ export default function App() {
         activePlaneId={activePlaneId}
         show3dTiles={show3dTiles}
         controlsHidden={activePlaneInOtherProject}
+        focus={mapFocus}
       />
 
       <div className={`leftcol${introVisible ? '' : ' is-compact'}`}>
@@ -540,6 +548,7 @@ function SplatOverlay({ open, onClose }: { open: SplatOpenDetail; onClose: () =>
 
   return (
     <div className="lb-layer">
+      <SplatCone id={hotspot.id} winRef={winRef} />
       <figure
         ref={winRef}
         className={`float lb splat${winSheet ? ' is-sheet' : ''}${winDragging ? ' is-dragging' : ''}`}
@@ -597,6 +606,58 @@ function SplatOverlay({ open, onClose }: { open: SplatOpenDetail; onClose: () =>
         )}
       </figure>
     </div>
+  );
+}
+
+/**
+ * The scan window's view cone: from the scanned spot on the facade to the window's two
+ * outermost corners, so the window reads as a view from inside the building at that point.
+ * Redrawn every frame (camera and window both move) by writing the SVG attributes directly.
+ */
+function SplatCone({ id, winRef }: { id: string; winRef: React.RefObject<HTMLElement | null> }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const coneRef = useRef<SVGPolygonElement>(null);
+  const edgeRef = useRef<SVGPathElement>(null);
+  const footRef = useRef<SVGCircleElement>(null);
+
+  useEffect(() => {
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const svg = svgRef.current, win = winRef.current;
+      const p = splatAnchor(id);
+      const r = win?.getBoundingClientRect();
+      const visible = !!(p && r && r.width > 0 && win!.style.visibility !== 'hidden' &&
+        !(p.x > r.left && p.x < r.right && p.y > r.top && p.y < r.bottom));
+      if (svg) svg.style.opacity = visible ? '1' : '0';
+      if (!visible) return;
+
+      // Corners seen from the spot: the two with the widest angle between them frame the cone
+      const corners = [[r!.left, r!.top], [r!.right, r!.top], [r!.right, r!.bottom], [r!.left, r!.bottom]];
+      const mid = Math.atan2((r!.top + r!.bottom) / 2 - p!.y, (r!.left + r!.right) / 2 - p!.x);
+      const rel = corners.map(([x, y]) => {
+        let a = Math.atan2(y - p!.y, x - p!.x) - mid;
+        while (a > Math.PI) a -= 2 * Math.PI;
+        while (a <= -Math.PI) a += 2 * Math.PI;
+        return a;
+      });
+      const a = corners[rel.indexOf(Math.min(...rel))];
+      const b = corners[rel.indexOf(Math.max(...rel))];
+      coneRef.current?.setAttribute('points', `${p!.x},${p!.y} ${a[0]},${a[1]} ${b[0]},${b[1]}`);
+      edgeRef.current?.setAttribute('d', `M${a[0]},${a[1]} L${p!.x},${p!.y} L${b[0]},${b[1]}`);
+      footRef.current?.setAttribute('cx', String(p!.x));
+      footRef.current?.setAttribute('cy', String(p!.y));
+    };
+    draw();
+    return () => cancelAnimationFrame(raf);
+  }, [id, winRef]);
+
+  return (
+    <svg ref={svgRef} className="splat-cone" aria-hidden="true">
+      <polygon ref={coneRef} className="splat-cone__fill" />
+      <path ref={edgeRef} className="splat-cone__edge" />
+      <circle ref={footRef} r="5" className="splat-cone__foot" />
+    </svg>
   );
 }
 

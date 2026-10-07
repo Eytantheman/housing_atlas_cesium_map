@@ -3,7 +3,7 @@ import type { HousingProject } from '../types';
 import { PANEL_CONTENT } from '../data/panel-content';
 import type { CamPos } from '../data/panel-content';
 import { IMAGE_PLANES } from '../config/image-planes';
-import { SPLAT_HOTSPOTS, openSplat } from '../config/splat-hotspots';
+import { SPLAT_HOTSPOTS, openSplat, splatAnchor } from '../config/splat-hotspots';
 import { useFloatingWindow, announceFloatOpen, FLOAT_OPEN_EVENT } from './useFloatingWindow';
 import type { FloatKind } from './useFloatingWindow';
 
@@ -193,7 +193,7 @@ export function ProjectPanel({ project, onClose, visiblePlanes, onSetPlane }: Pr
                 <span>{pad2(scans.length)}</span>
               </h3>
               {scans.map(sc => (
-                <button key={sc.id} className="scan-row" onClick={() => openSplat({ id: sc.id })}>
+                <button key={sc.id} className="scan-row" onClick={() => openSplat({ id: sc.id, at: splatAnchor(sc.id) ?? undefined })}>
                   <span className="dot" aria-hidden="true" />
                   <span className="scan-row__title">{sc.title}</span>
                   <span className="scan-row__go">Enter&nbsp;→</span>

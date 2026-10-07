@@ -5,6 +5,8 @@ export const SHEET_BREAKPOINT = 1024;
 const MARGIN = 24;
 const EDGE = 16;
 const BAR_H = 36;
+const MIN_BESIDE = 340; // narrowest window worth placing beside an avoided point
+const PIN_TAG_W = 110;  // the 3D scan pin's tag, to the right of its point
 
 const isSheetWidth = () => window.innerWidth < SHEET_BREAKPOINT;
 
@@ -65,10 +67,20 @@ export function useFloatingWindow(preferredW: number, opts: FloatingWindowOption
     const a = freeArea(preferredW);
     let w = Math.min(preferredW, a.right - a.left - MARGIN * 2);
     if (opts.aspect) w = Math.min(w, (a.bottom - a.top - MARGIN * 2 - (opts.chromeH ?? 0)) * opts.aspect);
+    // Keep the avoided point uncovered: narrow the window to the wider side of it (if that
+    // still leaves a usable window), so whatever points at it stays visible
+    const avoidRight = !!opts.avoid && opts.avoid.x < (a.left + a.right) / 2;
+    if (opts.avoid) {
+      const side = avoidRight ? a.right - opts.avoid.x - MARGIN * 2 : opts.avoid.x - a.left - MARGIN * 2;
+      // To the right also clear the pin's tag, which hangs right of the point, when there is room
+      const roomy = avoidRight ? side - PIN_TAG_W : side;
+      if (roomy >= MIN_BESIDE) w = Math.min(w, roomy);
+      else if (side >= MIN_BESIDE) w = Math.min(w, side);
+    }
     w = Math.round(Math.max(280, w));
     const slack = Math.max(0, a.right - a.left - w - MARGIN * 2);
     const x = opts.avoid
-      ? a.left + MARGIN + (opts.avoid.x < (a.left + a.right) / 2 ? slack : 0)
+      ? a.left + MARGIN + (avoidRight ? slack : 0)
       : a.left + MARGIN + Math.random() * slack;
     return { x: Math.round(x), y: a.top + MARGIN, w, placed: false };
   });

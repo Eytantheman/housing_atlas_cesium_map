@@ -4,7 +4,11 @@ export interface CameraPos {
   heading: number;
   lat?: number; // override project lat if needed
   lng?: number; // override project lng if needed
+  focusRadius?: number; // metres of colour around the project in the greyscale model (default FOCUS_RADIUS)
 }
+
+/** Default radius (m) of the coloured area around a selected project */
+export const FOCUS_RADIUS = 250;
 
 export const PROJECT_CAMERAS: Record<number, CameraPos> = {
   1:  { lat: 52.34765,  lng: 4.908561, height: 131.7, pitch: -38.1, heading: 48.1  },
@@ -37,5 +41,5 @@ export const PROJECT_CAMERAS: Record<number, CameraPos> = {
   33: { lat: 52.386584, lng: 4.887011, height: 125.7, pitch: -35.5, heading: 40.5  },
   34: { lat: 52.369345, lng: 4.895285, height: 179.8, pitch: -48.9, heading: 225.6 },
   35: { lat: 51.918094, lng: 4.493509, height: 224.9, pitch: -36.1, heading: 349.8 },
-  37: { lat: 52.327942, lng: 4.980395, height: 286.3, pitch: -30.7, heading: 241.8 }, // Groenhoven
+  37: { lat: 52.327942, lng: 4.980395, height: 286.3, pitch: -30.7, heading: 241.8, focusRadius: 320 }, // Groenhoven (8 towers, ~470 m across)
 };
