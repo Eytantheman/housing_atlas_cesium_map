@@ -344,12 +344,6 @@ export default function App() {
         <p>
           Welcome to Augmented Atlas, a living archive of Dutch collective housing. This platform brings together research produced within the Housing Studies course (TU Delft 2024-2026) into a single interactive environment, where each case study can be explored in situ.
         </p>
-        <p>
-          The dynamic 3D map interface allows visitors to move between site and archival records.
-        </p>
-        <p>
-          Rather than presenting housing history as a fixed record, the Augmented Atlas is meant to treat the archive as an open, evolving structure, one shaped collectively by students, communities, and institutions including Nieuwe Institute, and offered here as both a research tool and a public exhibition space.
-        </p>
         <p className="intro__rights">© 2026 Architecture Archive of the Future. All rights reserved.</p>
       </section>
       </div>

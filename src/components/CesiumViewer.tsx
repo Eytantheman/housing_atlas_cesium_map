@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import type { HousingProject } from '../types';
 import { IMAGE_PLANES, type ImagePlane } from '../config/image-planes';
 import { VIDEO_HOTSPOTS } from '../config/video-hotspots';
-import { SPLAT_HOTSPOTS, openSplat, setSplatAnchor } from '../config/splat-hotspots';
+import { SPLAT_HOTSPOTS, setSplatAnchor } from '../config/splat-hotspots';
 import { DEV_TOOLS } from '../config/dev';
 import { MapHint } from './MapHint';
+import { SplatPins } from './SplatPins';
 
 // Cesium is loaded via CDN script tag — access the global
 declare const Cesium: typeof import('cesium');
@@ -12,76 +13,6 @@ declare const Cesium: typeof import('cesium');
 // Signal orange — the single accent from DESIGN.md (also used for in-scene hotspots)
 const ACCENT = '#FF4F00';
 const accentColor = () => Cesium.Color.fromCssColorString(ACCENT);
-// 3D-scan hotspot marker: a paper tag (immersive-view icon + "3D SCAN") on a leader line down to
-// an accent square on the facade. Drawn on a canvas so the tag uses the page's IBM Plex Mono.
-const PIN = { plate: 34, leader: 20, foot: 7, pad: 10 };
-// side 'left' mirrors the tag (label, then icon plate over the leader), for pins close together.
-function drawSplatPin(hover: boolean, title: string, side: 'left' | 'right' = 'right') {
-  const ink = '#0A0A0A', paper = '#F5F4F0';
-  const dpr = 3;
-  const font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
-  const probe = document.createElement('canvas').getContext('2d')!;
-  probe.font = font;
-  (probe as any).letterSpacing = '0.06em';
-  const label = title.toUpperCase();
-  const tabW = Math.ceil(probe.measureText(label).width) + PIN.pad * 2;
-  const w = PIN.plate + tabW + 2;
-  const h = PIN.plate + PIN.leader + PIN.foot + 2;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  const c = canvas.getContext('2d')!;
-  c.scale(dpr, dpr);
-  c.translate(1, 1);
-  const px = side === 'left' ? tabW : 0;           // icon plate's left edge
-  const lx = side === 'left' ? 0 : PIN.plate;      // label's left edge
-  const cx = px + PIN.plate / 2;                   // leader and icon centre
-
-  // Leader: paper halo so it reads on dark roofs, ink core
-  c.lineCap = 'butt';
-  c.strokeStyle = paper; c.lineWidth = 3;
-  c.beginPath(); c.moveTo(cx, PIN.plate); c.lineTo(cx, PIN.plate + PIN.leader); c.stroke();
-  c.strokeStyle = ink; c.lineWidth = 1;
-  c.beginPath(); c.moveTo(cx, PIN.plate); c.lineTo(cx, PIN.plate + PIN.leader); c.stroke();
-  // Foot: accent square on the scanned spot
-  const fy = PIN.plate + PIN.leader;
-  c.fillStyle = paper; c.fillRect(cx - PIN.foot / 2 - 1, fy - 1, PIN.foot + 2, PIN.foot + 2);
-  c.fillStyle = ACCENT; c.fillRect(cx - PIN.foot / 2, fy, PIN.foot, PIN.foot);
-
-  // Tag: icon plate + label, one square-cornered sheet with a 1px ink rule between them
-  const fg = hover ? paper : ink, bg = hover ? ink : paper;
-  c.fillStyle = bg; c.fillRect(0, 0, PIN.plate + tabW, PIN.plate);
-  c.strokeStyle = ink; c.lineWidth = 1;
-  c.strokeRect(0.5, 0.5, PIN.plate + tabW - 1, PIN.plate - 1);
-  c.strokeStyle = hover ? '#5C5C57' : '#D9D8D3';
-  const rule = side === 'left' ? tabW : PIN.plate;
-  c.beginPath(); c.moveTo(rule + 0.5, 6); c.lineTo(rule + 0.5, PIN.plate - 6); c.stroke();
-
-  // Icon: isometric volume inside an orbit — "step inside, look around"
-  const iy = 17;
-  c.strokeStyle = fg; c.lineWidth = 1.2; c.lineJoin = 'round';
-  const s = 6.5, k = s * 0.58;
-  c.beginPath();
-  c.moveTo(cx, iy - s); c.lineTo(cx + s, iy - s + k); c.lineTo(cx + s, iy + k); c.lineTo(cx, iy + s);
-  c.lineTo(cx - s, iy + k); c.lineTo(cx - s, iy - s + k); c.closePath();
-  c.moveTo(cx - s, iy - s + k); c.lineTo(cx, iy - s + 2 * k); c.lineTo(cx + s, iy - s + k);
-  c.moveTo(cx, iy - s + 2 * k); c.lineTo(cx, iy + s);
-  c.stroke();
-  // Orbit: front arc in accent with an arrowhead
-  c.strokeStyle = ACCENT; c.lineWidth = 1.4;
-  c.beginPath(); c.ellipse(cx, iy + 1.5, 12.5, 4.2, 0, Math.PI * 0.08, Math.PI * 0.92); c.stroke();
-  const ax = cx - 12.5 * Math.cos(Math.PI * 0.08), ay = iy + 1.5 + 4.2 * Math.sin(Math.PI * 0.08);
-  c.fillStyle = ACCENT;
-  c.beginPath(); c.moveTo(ax - 1.5, ay - 3.2); c.lineTo(ax + 2.4, ay - 0.6); c.lineTo(ax - 2.2, ay + 1.2); c.closePath(); c.fill();
-
-  // Label
-  c.fillStyle = fg; c.font = font; (c as any).letterSpacing = '0.06em';
-  c.textBaseline = 'middle';
-  c.fillText(label, lx + PIN.pad, PIN.plate / 2 + 0.5);
-
-  return { image: canvas.toDataURL('image/png'), width: w, height: h };
-}
 // Tiles in greyscale, except a soft-edged circle of colour around the selected project.
 // u_radius is animated (0 = all grey), so a selection reveals its surroundings outward.
 // positionWC is single precision (~0.5 m at Earth radius): plenty for a 100 m+ circle.
@@ -456,39 +387,7 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
       });
     }
 
-    // ── Splat hotspots (pin on the facade, click → 3D scan window) ─────────
-    const splatEntities: Record<string, any> = {};
-    for (const h of SPLAT_HOTSPOTS) {
-      splatEntities[h.id] = viewer.entities.add({
-        id: `splat-hotspot-${h.id}`,
-        position: Cesium.Cartesian3.fromDegrees(h.lng, h.lat, h.height),
-        billboard: {
-          show: false, // until the tag is drawn with the web font
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          // the leader's foot (not the tag's corner) sits on the scanned spot; a left-hanging
-          // tag is anchored at its right edge, where its leader is
-          horizontalOrigin: h.tagSide === 'left' ? Cesium.HorizontalOrigin.RIGHT : Cesium.HorizontalOrigin.LEFT,
-          pixelOffset: new Cesium.Cartesian2((h.tagSide === 'left' ? 1 : -1) * (PIN.plate / 2 + 1), PIN.foot / 2 + 1),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY, // never hidden behind the building
-          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 2500),
-        },
-      });
-    }
-    // Each pin's tag carries its scan's title (rest + hover images per hotspot)
-    const drawPins = () => Object.fromEntries(SPLAT_HOTSPOTS.map(h =>
-      [h.id, { rest: drawSplatPin(false, h.title, h.tagSide), hover: drawSplatPin(true, h.title, h.tagSide) }]));
-    let splatPins = drawPins();
-    const applySplatPin = (id: string, hover: boolean) => {
-      const b = splatEntities[id]?.billboard;
-      const p = splatPins[id]?.[hover ? 'hover' : 'rest'];
-      if (!b || !p) return;
-      b.image = p.image; b.width = p.width; b.height = p.height;
-    };
-    document.fonts.load('500 11px "IBM Plex Mono"').catch(() => {}).finally(() => {
-      if (viewer.isDestroyed()) return;
-      splatPins = drawPins();
-      for (const id of Object.keys(splatEntities)) { applySplatPin(id, false); splatEntities[id].billboard.show = true; }
-    });
+    // ── Splat hotspots: HTML pins over the map (<SplatPins>), placed from setSplatAnchor ──
     // Throttle the map while a scan is open — two 3D engines share the GPU
     const onSplatOpen = () => { viewer.targetFrameRate = 15; };
     const onSplatClose = () => { viewer.targetFrameRate = undefined as unknown as number; };
@@ -615,15 +514,6 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
         if (hotspot) window.dispatchEvent(new CustomEvent('cesium:video-open', { detail: hotspot.videoSrc }));
         return;
       }
-      // Splat hotspot click
-      if (entId?.startsWith('splat-hotspot-')) {
-        const r = viewer.scene.canvas.getBoundingClientRect();
-        openSplat({
-          id: entId.slice('splat-hotspot-'.length),
-          at: { x: r.left + click.position.x, y: r.top + click.position.y },
-        });
-        return;
-      }
       // Project marker click
       if (picked.id instanceof Cesium.Entity) {
         const proj = picked.id.properties?.getValue(Cesium.JulianDate.now())?.project as HousingProject | undefined;
@@ -645,19 +535,11 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
       window.dispatchEvent(new CustomEvent('cesium:pick', { detail: result }));
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK, Cesium.KeyboardEventModifier.SHIFT);
 
-    // ── Hover over video / splat hotspot → highlight + cursor ─────────────
+    // ── Hover over video hotspot → highlight ──────────────────────────────
     let hoveredVideoId: string | null = null;
-    let hoveredSplatId: string | null = null;
     handler.setInputAction((move: any) => {
       const picked = viewer.scene.pick(move.endPosition);
       const entId: string | undefined = picked?.id?.id;
-      const splatId = entId?.startsWith('splat-hotspot-') ? entId.slice('splat-hotspot-'.length) : null;
-      if (splatId !== hoveredSplatId) {
-        if (hoveredSplatId) applySplatPin(hoveredSplatId, false);
-        hoveredSplatId = splatId;
-        if (splatId) applySplatPin(splatId, true);
-        viewer.scene.canvas.style.cursor = splatId ? 'pointer' : '';
-      }
       const newId = entId?.startsWith('video-hotspot-')
         ? entId.slice('video-hotspot-'.length)
         : null;
@@ -667,7 +549,7 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
         videoEntities[hoveredVideoId].plane.material = accentColor().withAlpha(0.12);
       }
       hoveredVideoId = newId;
-      viewer.scene.canvas.style.cursor = newId || hoveredSplatId ? 'pointer' : '';
+      viewer.scene.canvas.style.cursor = newId ? 'pointer' : '';
       if (newId && videoEntities[newId]) {
         videoEntities[newId].plane.material = accentColor().withAlpha(0.4);
       }
@@ -871,6 +753,7 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
       <div ref={containerRef} className="map__canvas" />
       <div ref={creditsRef} className="map__credits" aria-label="Map data attribution" />
       <MapHint />
+      <SplatPins />
 
       {activePlaneShown && (
         <div className="drawing-ctrl">
