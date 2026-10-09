@@ -46,6 +46,8 @@ export interface FloatingWindowOptions {
   chromeH?: number;
   /** Screen point to keep clear (e.g. the clicked hotspot): the window opens on the other side. */
   avoid?: { x: number; y: number };
+  /** Grow the opening size by this factor (after fitting beside `avoid`), up to the free area. */
+  scale?: number;
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), Math.max(min, max));
@@ -65,8 +67,9 @@ export function useFloatingWindow(preferredW: number, opts: FloatingWindowOption
   const [sheet, setSheet] = useState(isSheetWidth);
   const [pos, setPos] = useState(() => {
     const a = freeArea(preferredW);
-    let w = Math.min(preferredW, a.right - a.left - MARGIN * 2);
-    if (opts.aspect) w = Math.min(w, (a.bottom - a.top - MARGIN * 2 - (opts.chromeH ?? 0)) * opts.aspect);
+    let maxW = a.right - a.left - MARGIN * 2;
+    if (opts.aspect) maxW = Math.min(maxW, (a.bottom - a.top - MARGIN * 2 - (opts.chromeH ?? 0)) * opts.aspect);
+    let w = Math.min(preferredW, maxW);
     // Keep the avoided point uncovered: narrow the window to the wider side of it (if that
     // still leaves a usable window), so whatever points at it stays visible
     const avoidRight = !!opts.avoid && opts.avoid.x < (a.left + a.right) / 2;
@@ -77,6 +80,7 @@ export function useFloatingWindow(preferredW: number, opts: FloatingWindowOption
       if (roomy >= MIN_BESIDE) w = Math.min(w, roomy);
       else if (side >= MIN_BESIDE) w = Math.min(w, side);
     }
+    if (opts.scale) w = Math.min(w * opts.scale, maxW);
     w = Math.round(Math.max(280, w));
     const slack = Math.max(0, a.right - a.left - w - MARGIN * 2);
     const x = opts.avoid

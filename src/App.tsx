@@ -511,7 +511,7 @@ function SplatOverlay({ open, onClose }: { open: SplatOpenDetail; onClose: () =>
   // Larger than the video window (interiors need room), sized to the free height too, and
   // opened on the side of the map away from the pin it came from
   const { ref: winRef, sheet: winSheet, dragging: winDragging, style: winStyle, handlers: winHandlers } =
-    useFloatingWindow(Math.min(window.innerWidth * 0.6, 900), { aspect: SPLAT_ASPECT, chromeH: 36 + 37, avoid: open.at });
+    useFloatingWindow(Math.min(window.innerWidth * 0.6, 900), { aspect: SPLAT_ASPECT, chromeH: 36 + 37, avoid: open.at, scale: 2 });
   const hotspot = SPLAT_HOTSPOTS.find(h => h.id === open.id);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [progress, setProgress] = useState(0);
