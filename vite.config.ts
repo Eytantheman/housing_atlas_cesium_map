@@ -13,6 +13,9 @@ export default defineConfig({
     },
   },
   server: {
+    // Large scan files need no live reload, and OneDrive locks them while syncing,
+    // which crashes the file watcher (EBUSY) — so don't watch them
+    watch: { ignored: ['**/public/splats/**', '**/public/splat-viewer/**'] },
     proxy: {
       '/api': { target: 'http://localhost:3001', changeOrigin: true },
     },

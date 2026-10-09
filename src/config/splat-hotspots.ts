@@ -7,6 +7,7 @@ export interface SplatHotspot {
   lat: number;
   lng: number;
   height: number;    // pin foot height (meters above ellipsoid) — Shift+click the facade in dev to get it
+  tagSide?: 'left' | 'right'; // which side of the pin its tag hangs (default right) — to separate close pins
 }
 
 const query = (h: SplatHotspot) =>
@@ -38,11 +39,32 @@ export const SPLAT_HOTSPOTS: SplatHotspot[] = [
   {
     id: 'groenhoven-interior',
     projectId: 37,
-    title: 'Groenhoven interior',
+    title: 'Community Bar',
     content: '/splats/groenhoven/bijlmer04.sog',
     settings: '/splats/groenhoven/settings.json',
     lat: 52.326302,
     lng: 4.976538,
     height: 44.4,
+  },
+  {
+    id: 'groenhoven-hallway',
+    projectId: 37,
+    title: 'Hallway',
+    content: '/splats/groenhoven/bijlmer03.sog',
+    settings: '/splats/groenhoven/bijlmer03.settings.json',
+    lat: 52.326058,
+    lng: 4.976659,
+    height: 63.1,
+  },
+  {
+    id: 'groenhoven-apt-46b',
+    projectId: 37,
+    title: 'Apartment 46B Interior',
+    content: '/splats/groenhoven/apt46b.sog',
+    settings: '/splats/groenhoven/apt46b.settings.json', // start view copied from the hallway scan
+    lat: 52.326121,
+    lng: 4.976794,
+    height: 54.1,
+    tagSide: 'left', // the Community Bar and Hallway tags hang right, just beside it
   },
 ];

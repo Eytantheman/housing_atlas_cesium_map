@@ -6,7 +6,7 @@ const MARGIN = 24;
 const EDGE = 16;
 const BAR_H = 36;
 const MIN_BESIDE = 340; // narrowest window worth placing beside an avoided point
-const PIN_TAG_W = 110;  // the 3D scan pin's tag, to the right of its point
+const PIN_TAG_W = 150;  // the 3D scan pin's tag (icon + scan title), to the right of its point
 
 const isSheetWidth = () => window.innerWidth < SHEET_BREAKPOINT;
 

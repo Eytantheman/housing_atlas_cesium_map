@@ -15,14 +15,15 @@ const accentColor = () => Cesium.Color.fromCssColorString(ACCENT);
 // 3D-scan hotspot marker: a paper tag (immersive-view icon + "3D SCAN") on a leader line down to
 // an accent square on the facade. Drawn on a canvas so the tag uses the page's IBM Plex Mono.
 const PIN = { plate: 34, leader: 20, foot: 7, pad: 10 };
-function drawSplatPin(hover: boolean) {
+// side 'left' mirrors the tag (label, then icon plate over the leader), for pins close together.
+function drawSplatPin(hover: boolean, title: string, side: 'left' | 'right' = 'right') {
   const ink = '#0A0A0A', paper = '#F5F4F0';
   const dpr = 3;
   const font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
   const probe = document.createElement('canvas').getContext('2d')!;
   probe.font = font;
   (probe as any).letterSpacing = '0.06em';
-  const label = '3D SCAN';
+  const label = title.toUpperCase();
   const tabW = Math.ceil(probe.measureText(label).width) + PIN.pad * 2;
   const w = PIN.plate + tabW + 2;
   const h = PIN.plate + PIN.leader + PIN.foot + 2;
@@ -33,7 +34,9 @@ function drawSplatPin(hover: boolean) {
   const c = canvas.getContext('2d')!;
   c.scale(dpr, dpr);
   c.translate(1, 1);
-  const cx = PIN.plate / 2;
+  const px = side === 'left' ? tabW : 0;           // icon plate's left edge
+  const lx = side === 'left' ? 0 : PIN.plate;      // label's left edge
+  const cx = px + PIN.plate / 2;                   // leader and icon centre
 
   // Leader: paper halo so it reads on dark roofs, ink core
   c.lineCap = 'butt';
@@ -52,7 +55,8 @@ function drawSplatPin(hover: boolean) {
   c.strokeStyle = ink; c.lineWidth = 1;
   c.strokeRect(0.5, 0.5, PIN.plate + tabW - 1, PIN.plate - 1);
   c.strokeStyle = hover ? '#5C5C57' : '#D9D8D3';
-  c.beginPath(); c.moveTo(PIN.plate + 0.5, 6); c.lineTo(PIN.plate + 0.5, PIN.plate - 6); c.stroke();
+  const rule = side === 'left' ? tabW : PIN.plate;
+  c.beginPath(); c.moveTo(rule + 0.5, 6); c.lineTo(rule + 0.5, PIN.plate - 6); c.stroke();
 
   // Icon: isometric volume inside an orbit — "step inside, look around"
   const iy = 17;
@@ -74,7 +78,7 @@ function drawSplatPin(hover: boolean) {
   // Label
   c.fillStyle = fg; c.font = font; (c as any).letterSpacing = '0.06em';
   c.textBaseline = 'middle';
-  c.fillText(label, PIN.plate + PIN.pad, PIN.plate / 2 + 0.5);
+  c.fillText(label, lx + PIN.pad, PIN.plate / 2 + 0.5);
 
   return { image: canvas.toDataURL('image/png'), width: w, height: h };
 }
@@ -461,24 +465,29 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
         billboard: {
           show: false, // until the tag is drawn with the web font
           verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
-          // the leader's foot (not the tag's corner) sits on the scanned spot
-          pixelOffset: new Cesium.Cartesian2(-(PIN.plate / 2 + 1), PIN.foot / 2 + 1),
+          // the leader's foot (not the tag's corner) sits on the scanned spot; a left-hanging
+          // tag is anchored at its right edge, where its leader is
+          horizontalOrigin: h.tagSide === 'left' ? Cesium.HorizontalOrigin.RIGHT : Cesium.HorizontalOrigin.LEFT,
+          pixelOffset: new Cesium.Cartesian2((h.tagSide === 'left' ? 1 : -1) * (PIN.plate / 2 + 1), PIN.foot / 2 + 1),
           disableDepthTestDistance: Number.POSITIVE_INFINITY, // never hidden behind the building
           distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 2500),
         },
       });
     }
-    const splatPin = { rest: drawSplatPin(false), hover: drawSplatPin(true) };
-    const applySplatPin = (b: any, hover: boolean) => {
-      const p = hover ? splatPin.hover : splatPin.rest;
+    // Each pin's tag carries its scan's title (rest + hover images per hotspot)
+    const drawPins = () => Object.fromEntries(SPLAT_HOTSPOTS.map(h =>
+      [h.id, { rest: drawSplatPin(false, h.title, h.tagSide), hover: drawSplatPin(true, h.title, h.tagSide) }]));
+    let splatPins = drawPins();
+    const applySplatPin = (id: string, hover: boolean) => {
+      const b = splatEntities[id]?.billboard;
+      const p = splatPins[id]?.[hover ? 'hover' : 'rest'];
+      if (!b || !p) return;
       b.image = p.image; b.width = p.width; b.height = p.height;
     };
     document.fonts.load('500 11px "IBM Plex Mono"').catch(() => {}).finally(() => {
       if (viewer.isDestroyed()) return;
-      splatPin.rest = drawSplatPin(false);
-      splatPin.hover = drawSplatPin(true);
-      for (const e of Object.values(splatEntities)) { applySplatPin(e.billboard, false); e.billboard.show = true; }
+      splatPins = drawPins();
+      for (const id of Object.keys(splatEntities)) { applySplatPin(id, false); splatEntities[id].billboard.show = true; }
     });
     // Throttle the map while a scan is open — two 3D engines share the GPU
     const onSplatOpen = () => { viewer.targetFrameRate = 15; };
@@ -644,9 +653,9 @@ export function CesiumViewer({ tourProjects, flyToTarget, onProjectSelect, visib
       const entId: string | undefined = picked?.id?.id;
       const splatId = entId?.startsWith('splat-hotspot-') ? entId.slice('splat-hotspot-'.length) : null;
       if (splatId !== hoveredSplatId) {
-        if (hoveredSplatId && splatEntities[hoveredSplatId]) applySplatPin(splatEntities[hoveredSplatId].billboard, false);
+        if (hoveredSplatId) applySplatPin(hoveredSplatId, false);
         hoveredSplatId = splatId;
-        if (splatId && splatEntities[splatId]) applySplatPin(splatEntities[splatId].billboard, true);
+        if (splatId) applySplatPin(splatId, true);
         viewer.scene.canvas.style.cursor = splatId ? 'pointer' : '';
       }
       const newId = entId?.startsWith('video-hotspot-')
